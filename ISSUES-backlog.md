@@ -100,3 +100,15 @@ chiaro, per chi preferisce.
 Verificare cosa succede se l'app è aperta in due tab diverse dello stesso
 browser: il `localStorage` è condiviso, quindi bisogna capire come gestire
 eventuali conflitti o disallineamenti di stato tra le tab.
+
+---
+
+## 11. Supporto multilingua (i18n)
+**Etichette:** `enhancement`, `priority-low`
+
+Attualmente testi e label sono hardcoded in italiano. Valutare se e come
+rendere l'interfaccia disponibile in più lingue (es. italiano/inglese),
+con eventuale rilevamento automatico della lingua del browser.
+
+*(Da discutere: priorità, lingue da supportare, se serve un vero sistema di
+i18n o bastano stringhe sostituibili.)*
