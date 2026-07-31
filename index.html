@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pannello Attività — Time Tracker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  :root{
+    --bg: #12151C;
+    --panel: #1A1E28;
+    --panel-raised: #21263200;
+    --line: #2A3040;
+    --amber: #E8A33D;
+    --amber-dim: #6b5227;
+    --amber-glow: rgba(232,163,61,0.35);
+    --slate: #4A5568;
+    --text: #EDEEF0;
+    --text-dim: #8B92A0;
+    --danger: #C0605A;
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin:0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 800px 400px at 50% -10%, rgba(232,163,61,0.06), transparent),
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+    padding: 32px 16px 64px;
+  }
+
+  .wrap{
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .masthead{
+    display:flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .masthead h1{
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin:0;
+  }
+
+  .masthead .tag{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .total-strip{
+    display:flex;
+    justify-content: space-between;
+    align-items:center;
+    padding: 14px 18px;
+    margin: 18px 0 22px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+
+  .total-strip .label{
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .total-strip .value{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--amber);
+  }
+
+  .add-row{
+    display:flex;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+
+  .add-row input{
+    flex:1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .add-row input:focus{ border-color: var(--amber-dim); }
+  .add-row input::placeholder{ color: var(--text-dim); }
+
+  .add-row button{
+    background: var(--amber);
+    border: none;
+    border-radius: 8px;
+    padding: 0 20px;
+    color: #1A1400;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: filter .15s, transform .05s;
+    white-space: nowrap;
+  }
+  .add-row button:hover{ filter: brightness(1.08); }
+  .add-row button:active{ transform: scale(0.97); }
+
+  #list{
+    display:flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .row{
+    display:flex;
+    align-items:center;
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .row:hover{ border-color: #3A4254; }
+
+  .row.active{
+    border-color: var(--amber-dim);
+    background: linear-gradient(90deg, rgba(232,163,61,0.08), var(--panel) 40%);
+  }
+
+  /* toggle switch */
+  .switch{
+    flex-shrink:0;
+    width: 44px;
+    height: 24px;
+    border-radius: 999px;
+    background: #2A3040;
+    border: 1px solid #343B4C;
+    position: relative;
+    transition: background .2s, border-color .2s;
+  }
+  .row.active .switch{
+    background: var(--amber-dim);
+    border-color: var(--amber);
+  }
+  .switch::after{
+    content:'';
+    position:absolute;
+    top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    border-radius:50%;
+    background: var(--slate);
+    transition: transform .2s, background .2s, box-shadow .2s;
+  }
+  .row.active .switch::after{
+    transform: translateX(20px);
+    background: var(--amber);
+    box-shadow: 0 0 10px var(--amber-glow);
+  }
+
+  .row-main{
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .row-name{
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow:hidden;
+    text-overflow: ellipsis;
+  }
+
+  .row-status{
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .row.active .row-status{ color: var(--amber); }
+
+  .row-time{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 17px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-dim);
+    flex-shrink:0;
+  }
+  .row.active .row-time{ color: var(--amber); }
+
+  .row-del{
+    flex-shrink:0;
+    width: 26px; height: 26px;
+    border-radius:6px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 15px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition: background .15s, color .15s;
+  }
+  .row-del:hover{ background: rgba(192,96,90,0.15); color: var(--danger); }
+
+  .empty{
+    text-align:center;
+    padding: 48px 20px;
+    color: var(--text-dim);
+    font-size: 13px;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+  }
+
+  footer{
+    text-align:center;
+    margin-top: 32px;
+    font-size: 11px;
+    color: #4A5060;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <h1>Pannello Attività</h1>
+    <span class="tag">Solo una accesa alla volta</span>
+  </div>
+
+  <div class="total-strip">
+    <span class="label">Totale registrato oggi</span>
+    <span class="value" id="totalTime">00:00:00</span>
+  </div>
+
+  <div class="add-row">
+    <input type="text" id="nameInput" placeholder="Nome attività (es. Email, Riunione, Report...)" maxlength="60">
+    <button id="addBtn">Avvia</button>
+  </div>
+
+  <div id="list"></div>
+
+  <footer>I dati restano salvati in questo browser · nessun account richiesto</footer>
+</div>
+
+<script>
+  const STORAGE_KEY = 'timeTracker_activities_v1';
+  const listEl = document.getElementById('list');
+  const totalEl = document.getElementById('totalTime');
+  const nameInput = document.getElementById('nameInput');
+  const addBtn = document.getElementById('addBtn');
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return [];
+      return JSON.parse(raw);
+    }catch(e){ return []; }
+  }
+
+  function save(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(activities)); }
+    catch(e){ console.error('Salvataggio fallito', e); }
+  }
+
+  // each activity: { id, name, elapsed (ms accumulated while stopped), running (bool), startedAt (timestamp or null) }
+  let activities = load();
+
+  function fmt(ms){
+    const totalSec = Math.floor(ms/1000);
+    const h = Math.floor(totalSec/3600);
+    const m = Math.floor((totalSec%3600)/60);
+    const s = totalSec%60;
+    return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');
+  }
+
+  function currentElapsed(a){
+    if(a.running && a.startedAt){
+      return a.elapsed + (Date.now() - a.startedAt);
+    }
+    return a.elapsed;
+  }
+
+  function stopAll(exceptId){
+    activities.forEach(a=>{
+      if(a.running && a.id !== exceptId){
+        a.elapsed += Date.now() - a.startedAt;
+        a.running = false;
+        a.startedAt = null;
+      }
+    });
+  }
+
+  function toggle(id){
+    const a = activities.find(x=>x.id===id);
+    if(!a) return;
+    if(a.running){
+      // stop it
+      a.elapsed += Date.now() - a.startedAt;
+      a.running = false;
+      a.startedAt = null;
+    } else {
+      stopAll(null);
+      a.running = true;
+      a.startedAt = Date.now();
+    }
+    save();
+    render();
+  }
+
+  function addActivity(name){
+    name = name.trim();
+    if(!name) return;
+    stopAll(null);
+    const a = {
+      id: 'a'+Date.now()+Math.random().toString(36).slice(2,7),
+      name,
+      elapsed: 0,
+      running: true,
+      startedAt: Date.now()
+    };
+    activities.unshift(a);
+    save();
+    render();
+  }
+
+  function removeActivity(id){
+    activities = activities.filter(a=>a.id!==id);
+    save();
+    render();
+  }
+
+  function render(){
+    listEl.innerHTML = '';
+    if(activities.length === 0){
+      listEl.innerHTML = '<div class="empty">Nessuna attività ancora. Scrivi un nome sopra e premi "Avvia" per iniziare a tracciare il tempo.</div>';
+    } else {
+      activities.forEach(a=>{
+        const row = document.createElement('div');
+        row.className = 'row' + (a.running ? ' active' : '');
+        row.innerHTML = `
+          <div class="switch"></div>
+          <div class="row-main">
+            <div class="row-name"></div>
+            <div class="row-status">${a.running ? 'In corso' : 'In pausa'}</div>
+          </div>
+          <div class="row-time">${fmt(currentElapsed(a))}</div>
+          <button class="row-del" title="Elimina attività">✕</button>
+        `;
+        row.querySelector('.row-name').textContent = a.name;
+        row.addEventListener('click', (e)=>{
+          if(e.target.closest('.row-del')) return;
+          toggle(a.id);
+        });
+        row.querySelector('.row-del').addEventListener('click', (e)=>{
+          e.stopPropagation();
+          removeActivity(a.id);
+        });
+        listEl.appendChild(row);
+      });
+    }
+    updateTotal();
+  }
+
+  function updateTotal(){
+    const total = activities.reduce((sum,a)=>sum + currentElapsed(a), 0);
+    totalEl.textContent = fmt(total);
+  }
+
+  function tick(){
+    // update only time displays without full re-render, for smoothness
+    const rows = listEl.querySelectorAll('.row');
+    rows.forEach((row, i)=>{
+      const a = activities[i];
+      if(!a) return;
+      const timeEl = row.querySelector('.row-time');
+      if(timeEl) timeEl.textContent = fmt(currentElapsed(a));
+    });
+    updateTotal();
+  }
+
+  addBtn.addEventListener('click', ()=>{
+    addActivity(nameInput.value);
+    nameInput.value = '';
+    nameInput.focus();
+  });
+
+  nameInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){
+      addActivity(nameInput.value);
+      nameInput.value = '';
+    }
+  });
+
+  render();
+  setInterval(tick, 1000);
+
+  // save periodically in case of unexpected close while running
+  window.addEventListener('beforeunload', save);
+</script>
+</body>
+</html>
