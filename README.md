@@ -1,40 +1,54 @@
-# Pannello Attività — Time Tracker a timer multipli
+# OneTimer
 
-Un timer da scrivania per chi lavora su più attività durante la giornata e vuole
-tracciarne il tempo senza friction: **niente account, niente cloud, niente setup**.
+> **Keep every work context visible. Switch with one click.**
 
-## L'idea
+OneTimer is a local-first time tracker for people who bounce between tasks all day: email, meetings, coding, support, planning, and back again.
 
-I tool di time-tracking classici (Toggl, Clockify, ecc.) sono pensati per
-progetti/clienti/fatturazione. Questo è più semplice: un elenco di attività,
-**una sola può essere "accesa" alla volta**. Clicchi su un'attività per
-avviarla, quella precedente si ferma da sola ma resta visibile con il suo
-tempo accumulato. Vuoi tornarci? Un altro click e riparte da dove l'avevi
-lasciata.
+Most time trackers make you search, select a project, or create another entry before you can resume work. OneTimer keeps your activities ready on screen: click one to start it, and the previous timer stops automatically. No account, setup, cloud, or timesheet ceremony.
 
-Pensato per chi passa spesso da un task all'altro (email, riunioni, sviluppo,
-supporto clienti...) e vuole solo capire dove va il tempo, senza compilare
-timesheet.
+## What it does today
 
-## Come si usa
+- Create a named activity and start it immediately.
+- Keep one timer active at a time.
+- Switch to an existing activity with one click.
+- Pause the active activity with one click.
+- Keep elapsed time in the browser with `localStorage`.
+- Run as a dependency-free static page, including from a local file.
 
-1. Apri `index.html` nel browser (funziona anche offline, come file locale).
-2. Scrivi il nome di un'attività e premi **Avvia**.
-3. Cambia attività quando vuoi: scrivine una nuova, oppure clicca su una già
-   presente per riprenderla.
-4. I dati restano salvati nel browser (`localStorage`) tra una sessione e
-   l'altra, sullo stesso dispositivo.
+## Why OneTimer?
 
-## Stato del progetto
+OneTimer is not built for invoicing, project management, or surveillance. It is a small personal control panel for answering one simple question at the end of the day:
 
-Prototipo funzionante, singolo file HTML/CSS/JS senza dipendenze. In fase di
-consolidamento verso una prima release pubblica — vedi le [Issue](../../issues)
-per il backlog di miglioramenti (export dati, viste settimanali, versione
-mobile, estensione browser).
+**Where did my time go?**
 
-Contributi, segnalazioni e idee sono benvenuti: apri una issue o una pull
-request.
+It is designed to stay out of the way while you work, then make your day easier to understand.
 
-## Licenza
+## Run it
 
-MIT — vedi [LICENSE](./LICENSE).
+Open [`index.html`](./index.html) in a modern browser. There is no installation, build step, or server.
+
+## Roadmap
+
+The next improvements focus on keeping the one-click workflow while making the recorded time useful:
+
+- Daily activity lists and recurring contexts ready for tomorrow
+- Optional categories and category totals
+- Daily and Monday–Sunday weekly reports
+- CSV export with session detail and totals
+- Local backup/import and a retention reminder
+- GitHub Pages deployment
+- Italian UI first, followed by English
+
+See the [open issues](../../issues) for the working backlog.
+
+## Privacy
+
+Your data stays in your browser. OneTimer has no account, backend, analytics, or automatic cross-device sync. Export/backup support is planned so you remain in control of your history.
+
+## Contributing
+
+Ideas, bug reports, and pull requests are welcome. Keep the core promise intact: **switching activities must be fast, obvious, and frictionless.**
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
