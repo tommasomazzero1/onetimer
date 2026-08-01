@@ -31,6 +31,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
   const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'categoryReport'];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const storage = new Map(saved ? [['timeTracker_activities_v1', JSON.stringify(saved)]] : []);
+  const windowEvents = new Map();
   const context = {
     Date: FakeDate,
     Math,
@@ -38,17 +39,18 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     console,
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
     document: { getElementById: id => elements.get(id), createElement: () => new Element() },
-    window: { addEventListener() {}, confirm: () => false },
+    window: { addEventListener: (name, listener) => windowEvents.set(name, listener), confirm: () => false },
     setInterval() {}
   };
   const html = fs.readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, getState: () => state };`, context);
+  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, getState: () => state };`, context);
   return {
     ...context.api,
     elements,
     saved: () => JSON.parse(storage.get('timeTracker_activities_v1')),
-    advance: ms => { now += ms; }
+    advance: ms => { now += ms; },
+    pagehide: () => windowEvents.get('pagehide')()
   };
 }
 
@@ -64,6 +66,47 @@ assert.equal(tracker.getState().dailyActivities.find(d => d.activityId === track
 tracker.advance(1_000);
 tracker.toggle(tracker.getState().activities.find(a => a.name === 'A').id);
 assert.equal(tracker.getState().dailyActivities.find(d => d.activityId === tracker.getState().activities.find(a => a.name === 'A').id).elapsedMs, 2_000);
+
+const closeBoundary = openApp();
+closeBoundary.addActivity('A');
+closeBoundary.advance(60_000);
+closeBoundary.pagehide();
+assert.equal(closeBoundary.getState().activeActivityId, null);
+assert.equal(closeBoundary.getState().dailyActivities[0].elapsedMs, 60_000);
+const reopenedAfterClose = openApp({ now: new Date(2025, 0, 15, 9, 6).getTime(), saved: closeBoundary.saved() });
+assert.equal(reopenedAfterClose.getState().activeActivityId, null);
+assert.equal(reopenedAfterClose.getState().dailyActivities[0].elapsedMs, 60_000);
+
+const backgroundTimer = openApp();
+backgroundTimer.addActivity('A');
+backgroundTimer.advance(60_000);
+backgroundTimer.tick();
+assert.equal(backgroundTimer.getState().activeActivityId, backgroundTimer.getState().activities[0].id);
+assert.equal(backgroundTimer.elements.get('totalTime').textContent, '00:01:00');
+
+const midnightTimer = openApp({ now: new Date(2025, 0, 15, 23, 50).getTime() });
+midnightTimer.addActivity('A');
+midnightTimer.advance(30 * 60_000);
+midnightTimer.tick();
+assert.equal(midnightTimer.getState().activeActivityId, midnightTimer.getState().activities[0].id);
+assert.equal(JSON.stringify(midnightTimer.getState().dailyActivities.map(record => [record.localDate, record.elapsedMs])), JSON.stringify([
+  ['2025-01-15', 10 * 60_000], ['2025-01-16', 20 * 60_000]
+]));
+assert.equal(midnightTimer.getState().activities.length, 1);
+
+const beforeReloadAtMidnight = openApp({ now: new Date(2025, 0, 15, 23, 50).getTime() });
+beforeReloadAtMidnight.addActivity('A');
+beforeReloadAtMidnight.advance(5 * 60_000);
+beforeReloadAtMidnight.pagehide();
+const resumedAtMidnight = openApp({ now: new Date(2025, 0, 15, 23, 55).getTime(), saved: beforeReloadAtMidnight.saved() });
+resumedAtMidnight.toggle(resumedAtMidnight.getState().activities[0].id);
+resumedAtMidnight.advance(25 * 60_000);
+resumedAtMidnight.tick();
+assert.equal(JSON.stringify(resumedAtMidnight.getState().dailyActivities.map(record => [record.localDate, record.elapsedMs])), JSON.stringify([
+  ['2025-01-15', 10 * 60_000], ['2025-01-16', 20 * 60_000]
+]));
+assert.equal(resumedAtMidnight.getState().activities.length, 1);
+assert.equal(new Set(resumedAtMidnight.getState().dailyActivities.map(record => `${record.localDate}:${record.activityId}`)).size, 2);
 
 const yesterday = '2025-01-15';
 const today = '2025-01-16';
@@ -184,4 +227,4 @@ categories.setActivityCategory('misc', '');
 assert.ok(categories.categoryTotals('2025-01-15').some(total => total.category === 'SENZA CATEGORIA' && total.elapsedMs === 300));
 assert.equal(JSON.stringify({ activeActivityId: categories.getState().activeActivityId, startedAt: categories.getState().startedAt, dailyActivities: categories.getState().dailyActivities }), timerBeforeCategoryEdit);
 
-console.log('issue #1, #2, #3 and #4 checks passed');
+console.log('issue #1, #2, #3, #4 and #5 checks passed');

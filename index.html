@@ -479,22 +479,26 @@
   function currentElapsed(activity, now = Date.now()){
     const record = state.dailyActivities.find(d => d.activityId === activity.id && d.localDate === localDate());
     const total = record ? record.elapsedMs : 0;
-    return activity.id === state.activeActivityId && state.startedAt !== null ? total + Math.max(0, now - state.startedAt) : total;
+    return activity.id === state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) === localDate(now) ? total + Math.max(0, now - state.startedAt) : total;
+  }
+
+  function settleActive(now = Date.now()){
+    if(!state.activeActivityId || state.startedAt === null) return;
+    const activity = state.activities.find(a => a.id === state.activeActivityId);
+    if(!activity) return;
+    let startedAt = state.startedAt;
+    while(startedAt < now){
+      const midnight = new Date(startedAt);
+      midnight.setHours(24, 0, 0, 0);
+      const endsAt = Math.min(now, midnight.getTime());
+      dailyActivity(activity.id, localDate(startedAt)).elapsedMs += endsAt - startedAt;
+      startedAt = endsAt;
+    }
+    state.startedAt = now;
   }
 
   function pauseActive(now = Date.now()){
-    if(!state.activeActivityId) return;
-    const activity = state.activities.find(a => a.id === state.activeActivityId);
-    if(activity && state.startedAt !== null){
-      let startedAt = state.startedAt;
-      while(startedAt < now){
-        const midnight = new Date(startedAt);
-        midnight.setHours(24, 0, 0, 0);
-        const endsAt = Math.min(now, midnight.getTime());
-        dailyActivity(activity.id, localDate(startedAt)).elapsedMs += endsAt - startedAt;
-        startedAt = endsAt;
-      }
-    }
+    settleActive(now);
     state.activeActivityId = null;
     state.startedAt = null;
   }
@@ -609,7 +613,7 @@
 
   function tick(){
     if(state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) !== localDate()){
-      pauseActive();
+      settleActive();
       save();
       render();
       maybeOpenPreparation();
@@ -698,12 +702,16 @@
     prepEl.hidden = true;
   });
 
-  if(state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) !== localDate()) pauseActive();
   save();
   render();
   maybeOpenPreparation();
   setInterval(tick, 1000);
-  window.addEventListener('beforeunload', save);
+  function pauseAndSave(){
+    pauseActive();
+    save();
+  }
+  window.addEventListener('pagehide', pauseAndSave);
+  window.addEventListener('beforeunload', pauseAndSave);
 </script>
 </body>
 </html>
