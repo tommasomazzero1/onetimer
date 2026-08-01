@@ -351,6 +351,7 @@
     <div class="report-head"><h2>Storico e report</h2><button class="view-nav" id="homeBtn">Torna al timer</button></div>
     <div class="report-controls"><button class="view-nav active" id="dailyReportBtn">Giorno</button><button class="view-nav" id="weeklyReportBtn">Settimana</button></div>
     <div class="report-period"><button id="previousPeriodBtn" aria-label="Periodo precedente">←</button><span id="reportPeriod"></span><button id="nextPeriodBtn" aria-label="Periodo successivo">→</button></div>
+    <button class="view-nav" id="exportReportBtn">Esporta CSV</button>
     <div class="total-strip"><span class="label">Totale periodo</span><span class="value" id="reportTotal">00:00:00</span></div>
     <div id="reportContent"></div>
   </section>
@@ -384,6 +385,7 @@
   const reportPeriodEl = document.getElementById('reportPeriod');
   const reportTotalEl = document.getElementById('reportTotal');
   const reportContentEl = document.getElementById('reportContent');
+  const exportReportBtn = document.getElementById('exportReportBtn');
   const localDate = (timestamp = Date.now()) => {
     const date = new Date(timestamp);
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
@@ -563,6 +565,29 @@
     return { total: summary.elapsedMs, activities: rows(summary.activities), categories: [...summary.categories].map(([category, elapsedMs]) => ({ category, elapsedMs })).sort((a, b) => a.category.localeCompare(b.category)), days: dates.map(date => ({ ...days.get(date), activities: rows(days.get(date).activities) })) };
   }
 
+  function csvField(value){
+    value = String(value);
+    return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+  }
+  function csvForDates(dates){
+    const selected = new Set(dates);
+    const activities = new Map(state.activities.map(activity => [activity.id, activity]));
+    const rows = state.dailyActivities.filter(record => selected.has(record.localDate)).map(record => {
+      const activity = activities.get(record.activityId);
+      return [record.localDate, activity?.name || '', activity?.category || '', fmt(record.elapsedMs)];
+    }).sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+    return [['date', 'activity', 'category', 'duration'], ...rows].map(row => row.map(csvField).join(',')).join('\r\n') + '\r\n';
+  }
+  const reportDates = () => reportMode === 'daily' ? [reportDate] : weekDates(reportDate);
+  function exportReport(){
+    const dates = reportDates();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csvForDates(dates)], { type: 'text/csv;charset=utf-8' }));
+    link.download = `onetimer-${dates[0]}${dates.length === 7 ? `-${dates[6]}` : ''}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
   function reportRow(row, category = false){
     const element = document.createElement('div');
     element.className = 'report-row';
@@ -591,7 +616,7 @@
   }
 
   function renderReport(){
-    const dates = reportMode === 'daily' ? [reportDate] : weekDates(reportDate);
+    const dates = reportDates();
     const data = reportData(dates);
     const formatter = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     reportPeriodEl.textContent = reportMode === 'daily' ? formatter.format(dateForLocalDate(reportDate)) : `${new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' }).format(dateForLocalDate(dates[0]))} – ${new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', year: 'numeric' }).format(dateForLocalDate(dates[6]))}`;
@@ -866,6 +891,7 @@
   weeklyReportBtn.addEventListener('click', () => { reportMode = 'weekly'; reportDate = mondayFor(reportDate); renderReport(); });
   previousPeriodBtn.addEventListener('click', () => { reportDate = shiftLocalDate(reportDate, reportMode === 'daily' ? -1 : -7); renderReport(); });
   nextPeriodBtn.addEventListener('click', () => { reportDate = shiftLocalDate(reportDate, reportMode === 'daily' ? 1 : 7); renderReport(); });
+  exportReportBtn.addEventListener('click', exportReport);
   closePrepBtn.addEventListener('click', () => { prepEl.hidden = true; });
   closeArchivedBtn.addEventListener('click', () => { archivedEl.hidden = true; });
   confirmPrepBtn.addEventListener('click', () => {

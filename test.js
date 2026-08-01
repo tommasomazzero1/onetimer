@@ -17,6 +17,7 @@ class Element {
   appendChild(child) { this.children.push(child); }
   append(...children) { children.forEach(child => this.appendChild(child)); }
   addEventListener() {}
+  click() { this.clicked = true; }
   focus() {}
   querySelector(selector) {
     if (!this.nodes.has(selector)) this.nodes.set(selector, new Element());
@@ -30,9 +31,10 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
-  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'homeView', 'reportView', 'reportsBtn', 'homeBtn', 'dailyReportBtn', 'weeklyReportBtn', 'previousPeriodBtn', 'nextPeriodBtn', 'reportPeriod', 'reportTotal', 'reportContent'];
+  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'homeView', 'reportView', 'reportsBtn', 'homeBtn', 'dailyReportBtn', 'weeklyReportBtn', 'previousPeriodBtn', 'nextPeriodBtn', 'reportPeriod', 'reportTotal', 'reportContent', 'exportReportBtn'];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const storage = new Map(saved ? [['timeTracker_activities_v1', JSON.stringify(saved)]] : []);
+  const downloads = [];
   const windowEvents = new Map();
   const context = {
     Date: FakeDate,
@@ -40,16 +42,19 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     JSON,
     console,
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
+    Blob: class { constructor(parts, options) { this.text = parts.join(''); this.options = options; } },
+    URL: { createObjectURL: blob => { downloads.push(blob); return `blob:${downloads.length}`; }, revokeObjectURL() {} },
     document: { getElementById: id => elements.get(id), createElement: () => new Element() },
     window: { addEventListener: (name, listener) => windowEvents.set(name, listener), confirm: () => false },
     setInterval() {}
   };
   const html = fs.readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, reportData, weekDates, mondayFor, shiftLocalDate, renderReport, getState: () => state };`, context);
+  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, reportData, weekDates, mondayFor, shiftLocalDate, renderReport, csvForDates, reportDates, exportReport, setReportPeriod: (mode, date) => { reportMode = mode; reportDate = date; }, getState: () => state };`, context);
   return {
     ...context.api,
     elements,
+    downloads,
     saved: () => JSON.parse(storage.get('timeTracker_activities_v1')),
     advance: ms => { now += ms; },
     pagehide: () => windowEvents.get('pagehide')()
@@ -276,4 +281,32 @@ assert.equal(JSON.stringify(reports.getState()), reportStateBefore);
 reports.setActivityCategory('email-1', 'support');
 assert.ok(reports.reportData(week).categories.some(row => row.category === 'SUPPORT' && row.elapsedMs === 180_000));
 
-console.log('issue #1, #2, #3, #4, #5 and #6 checks passed');
+const csv = openApp({
+  saved: {
+    activities: [
+      { id: 'quoted', name: 'Email, "Mario"\nFollow-up', category: 'COM,MS', archived: false },
+      { id: 'coding', name: 'Coding', archived: false },
+      { id: 'later', name: 'Later', category: 'LATER', archived: false }
+    ],
+    dailyActivities: [
+      { localDate: '2025-01-15', activityId: 'quoted', elapsedMs: 5_400_000 },
+      { localDate: '2025-01-15', activityId: 'coding', elapsedMs: 11_700_000 },
+      { localDate: '2025-01-13', activityId: 'later', elapsedMs: 60_000 }
+    ],
+    activeActivityId: null,
+    startedAt: null
+  }
+});
+const csvStateBefore = JSON.stringify(csv.getState());
+assert.equal(csv.csvForDates(['2025-01-15']), 'date,activity,category,duration\r\n2025-01-15,Coding,,03:15:00\r\n2025-01-15,"Email, ""Mario""\nFollow-up","COM,MS",01:30:00\r\n');
+assert.equal(csv.csvForDates(['2025-01-14']), 'date,activity,category,duration\r\n');
+csv.setReportPeriod('daily', '2025-01-15');
+assert.deepEqual(JSON.parse(JSON.stringify(csv.reportDates())), ['2025-01-15']);
+csv.exportReport();
+assert.equal(csv.downloads[0].text, csv.csvForDates(['2025-01-15']));
+csv.setReportPeriod('weekly', '2025-01-15');
+assert.deepEqual(JSON.parse(JSON.stringify(csv.reportDates())), ['2025-01-13', '2025-01-14', '2025-01-15', '2025-01-16', '2025-01-17', '2025-01-18', '2025-01-19']);
+assert.equal(csv.csvForDates(csv.reportDates()), 'date,activity,category,duration\r\n2025-01-13,Later,LATER,00:01:00\r\n2025-01-15,Coding,,03:15:00\r\n2025-01-15,"Email, ""Mario""\nFollow-up","COM,MS",01:30:00\r\n');
+assert.equal(JSON.stringify(csv.getState()), csvStateBefore);
+
+console.log('issue #1, #2, #3, #4, #5, #6 and #7 checks passed');
