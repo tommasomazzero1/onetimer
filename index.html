@@ -241,6 +241,33 @@
     border-radius: 10px;
   }
 
+  .manage-row{ text-align:right; margin-top: -14px; margin-bottom: 24px; }
+  .manage-btn, .prep button{
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 8px 10px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font: 500 12px 'IBM Plex Sans', sans-serif;
+  }
+  .manage-btn:hover, .prep button:hover{ color: var(--text); border-color: var(--slate); }
+  .prep[hidden]{ display:none; }
+  .prep{
+    position:fixed; inset:0; z-index:1;
+    display:flex; align-items:center; justify-content:center;
+    padding:16px; background:rgba(0,0,0,.6);
+  }
+  .prep-card{
+    width:min(480px, 100%); padding:20px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  }
+  .prep h2{ margin:0 0 6px; font-size:17px; }
+  .prep p{ margin:0 0 16px; color:var(--text-dim); font-size:13px; }
+  .prep-list{ display:grid; gap:8px; margin-bottom:16px; }
+  .prep-choice{ display:flex; gap:9px; align-items:center; padding:9px; border:1px solid var(--line); border-radius:7px; font-size:14px; }
+  .prep-actions{ display:flex; justify-content:flex-end; gap:8px; }
+  .prep .confirm{ background:var(--amber); border-color:var(--amber); color:#1A1400; }
   footer{
     text-align:center;
     margin-top: 32px;
@@ -268,9 +295,20 @@
     <input type="text" id="nameInput" placeholder="Nome attività (es. Email, Riunione, Report...)" maxlength="60">
     <button id="addBtn">Avvia</button>
   </div>
-
+  <div class="manage-row"><button class="manage-btn" id="manageBtn">Gestisci le attività di oggi</button></div>
   <div id="list"></div>
 
+  <div class="prep" id="prepModal" hidden>
+    <div class="prep-card" role="dialog" aria-modal="true" aria-labelledby="prepTitle">
+      <h2 id="prepTitle">Prepara le attività di oggi</h2>
+      <p>Scegli le attività di ieri da rendere disponibili oggi.</p>
+      <div class="prep-list" id="yesterdayList"></div>
+      <div class="prep-actions">
+        <button id="closePrepBtn">Annulla</button>
+        <button class="confirm" id="confirmPrepBtn">Porta le attività selezionate a oggi</button>
+      </div>
+    </div>
+  </div>
   <footer>I dati restano salvati in questo browser · nessun account richiesto</footer>
 </div>
 
@@ -280,14 +318,18 @@
   const totalEl = document.getElementById('totalTime');
   const nameInput = document.getElementById('nameInput');
   const addBtn = document.getElementById('addBtn');
-
+  const manageBtn = document.getElementById('manageBtn');
+  const prepEl = document.getElementById('prepModal');
+  const yesterdayListEl = document.getElementById('yesterdayList');
+  const closePrepBtn = document.getElementById('closePrepBtn');
+  const confirmPrepBtn = document.getElementById('confirmPrepBtn');
   const localDate = (timestamp = Date.now()) => {
     const date = new Date(timestamp);
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
   };
 
   function emptyState(){
-    return { activities: [], dailyActivities: [], activeActivityId: null, startedAt: null };
+    return { activities: [], dailyActivities: [], activeActivityId: null, startedAt: null, preparedDays: [] };
   }
 
   function load(){
@@ -303,7 +345,8 @@
           activities: saved.map(({ id, name }) => ({ id, name, archived: false })),
           dailyActivities: saved.map(({ id, elapsed = 0 }) => ({ localDate: today, activityId: id, elapsedMs: elapsed })),
           activeActivityId: active ? active.id : null,
-          startedAt: active ? active.startedAt : null
+          startedAt: active ? active.startedAt : null,
+          preparedDays: []
         };
       }
 
@@ -314,7 +357,8 @@
         })),
         dailyActivities: saved.dailyActivities.filter(d => d && d.localDate && d.activityId && Number.isFinite(d.elapsedMs)),
         activeActivityId: saved.activeActivityId || null,
-        startedAt: Number.isFinite(saved.startedAt) ? saved.startedAt : null
+        startedAt: Number.isFinite(saved.startedAt) ? saved.startedAt : null,
+        preparedDays: [...new Set((saved.preparedDays || []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))]
       };
     }catch(e){ return emptyState(); }
   }
@@ -335,6 +379,29 @@
     return record;
   }
 
+  function previousLocalDate(){
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    return localDate(date);
+  }
+
+  function yesterdayActivities(){
+    const ids = new Set(state.dailyActivities.filter(d => d.localDate === previousLocalDate()).map(d => d.activityId));
+    return state.activities.filter(activity => !activity.archived && ids.has(activity.id));
+  }
+
+  function todayActivities(){
+    const ids = new Set(state.dailyActivities.filter(d => d.localDate === localDate()).map(d => d.activityId));
+    return state.activities.filter(activity => !activity.archived && ids.has(activity.id));
+  }
+
+  function prepareToday(ids){
+    const yesterdayIds = new Set(yesterdayActivities().map(activity => activity.id));
+    ids.filter(id => yesterdayIds.has(id)).forEach(id => dailyActivity(id));
+    save();
+    render();
+  }
+
   function fmt(ms){
     const totalSec = Math.floor(ms / 1000);
     const h = Math.floor(totalSec / 3600);
@@ -344,14 +411,24 @@
   }
 
   function currentElapsed(activity, now = Date.now()){
-    const total = dailyActivity(activity.id).elapsedMs;
+    const record = state.dailyActivities.find(d => d.activityId === activity.id && d.localDate === localDate());
+    const total = record ? record.elapsedMs : 0;
     return activity.id === state.activeActivityId && state.startedAt !== null ? total + Math.max(0, now - state.startedAt) : total;
   }
 
   function pauseActive(now = Date.now()){
     if(!state.activeActivityId) return;
     const activity = state.activities.find(a => a.id === state.activeActivityId);
-    if(activity && state.startedAt !== null) dailyActivity(activity.id).elapsedMs += Math.max(0, now - state.startedAt);
+    if(activity && state.startedAt !== null){
+      let startedAt = state.startedAt;
+      while(startedAt < now){
+        const midnight = new Date(startedAt);
+        midnight.setHours(24, 0, 0, 0);
+        const endsAt = Math.min(now, midnight.getTime());
+        dailyActivity(activity.id, localDate(startedAt)).elapsedMs += endsAt - startedAt;
+        startedAt = endsAt;
+      }
+    }
     state.activeActivityId = null;
     state.startedAt = null;
   }
@@ -397,7 +474,7 @@
 
   function render(){
     listEl.innerHTML = '';
-    const activities = state.activities.filter(a => !a.archived);
+    const activities = todayActivities();
     if(activities.length === 0){
       listEl.innerHTML = '<div class="empty">Nessuna attività ancora. Scrivi un nome sopra e premi "Avvia" per iniziare a tracciare il tempo.</div>';
     } else {
@@ -427,15 +504,20 @@
     }
     updateTotal();
   }
-
   function updateTotal(){
-    const total = state.activities.reduce((sum, activity) => sum + currentElapsed(activity), 0);
+    const total = todayActivities().reduce((sum, activity) => sum + currentElapsed(activity), 0);
     totalEl.textContent = fmt(total);
   }
 
   function tick(){
+    if(state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) !== localDate()){
+      pauseActive();
+      save();
+      render();
+      maybeOpenPreparation();
+    }
     const rows = listEl.querySelectorAll('.row');
-    state.activities.filter(a => !a.archived).forEach((activity, index) => {
+    todayActivities().forEach((activity, index) => {
       const timeEl = rows[index]?.querySelector('.row-time');
       if(timeEl) timeEl.textContent = fmt(currentElapsed(activity));
     });
@@ -455,7 +537,45 @@
     }
   });
 
+  function openPreparation(){
+    const activities = yesterdayActivities();
+    yesterdayListEl.innerHTML = '';
+    if(!activities.length) yesterdayListEl.textContent = 'Nessuna attività da ieri.';
+    activities.forEach(activity => {
+      const label = document.createElement('label');
+      label.className = 'prep-choice';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = activity.id;
+      const name = document.createElement('span');
+      name.textContent = activity.name;
+      label.appendChild(checkbox);
+      label.appendChild(name);
+      yesterdayListEl.appendChild(label);
+    });
+    prepEl.hidden = false;
+  }
+
+  function maybeOpenPreparation(){
+    const today = localDate();
+    if(!state.preparedDays.includes(today) && yesterdayActivities().length){
+      state.preparedDays.push(today);
+      save();
+      openPreparation();
+    }
+  }
+
+  manageBtn.addEventListener('click', openPreparation);
+  closePrepBtn.addEventListener('click', () => { prepEl.hidden = true; });
+  confirmPrepBtn.addEventListener('click', () => {
+    prepareToday([...yesterdayListEl.querySelectorAll('input:checked')].map(input => input.value));
+    prepEl.hidden = true;
+  });
+
+  if(state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) !== localDate()) pauseActive();
+  save();
   render();
+  maybeOpenPreparation();
   setInterval(tick, 1000);
   window.addEventListener('beforeunload', save);
 </script>
