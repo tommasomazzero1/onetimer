@@ -17,6 +17,7 @@ class Element {
   appendChild(child) { this.children.push(child); }
   append(...children) { children.forEach(child => this.appendChild(child)); }
   addEventListener() {}
+  setAttribute(name, value) { this[name] = value; }
   click() { this.clicked = true; }
   focus() {}
   querySelector(selector) {
