@@ -205,6 +205,13 @@
     letter-spacing: 0.08em;
   }
   .row.active .row-status{ color: var(--amber); }
+  .row-category{
+    width:120px; padding:5px 7px; background:transparent; color:var(--text-dim);
+    border:1px solid var(--line); border-radius:6px; font:11px 'IBM Plex Sans', sans-serif;
+  }
+  .category-report{ margin:0 0 24px; padding:12px 14px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .category-report h2{ margin:0 0 8px; color:var(--text-dim); font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; }
+  .category-total{ display:flex; justify-content:space-between; font:12px 'IBM Plex Mono', monospace; }
 
   .row-time{
     font-family: 'IBM Plex Mono', monospace;
@@ -298,6 +305,8 @@
     <button class="manage-btn" id="manageBtn">Gestisci le attività di oggi</button>
     <button class="manage-btn" id="archivedBtn">Attività archiviate</button>
   </div>
+  <datalist id="categoryOptions"></datalist>
+  <div class="category-report"><h2>Totali di oggi per categoria</h2><div id="categoryReport"></div></div>
   <div id="list"></div>
 
   <div class="prep" id="prepModal" hidden>
@@ -338,6 +347,8 @@
   const archivedEl = document.getElementById('archivedModal');
   const archivedListEl = document.getElementById('archivedList');
   const closeArchivedBtn = document.getElementById('closeArchivedBtn');
+  const categoryOptionsEl = document.getElementById('categoryOptions');
+  const categoryReportEl = document.getElementById('categoryReport');
   const localDate = (timestamp = Date.now()) => {
     const date = new Date(timestamp);
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
@@ -372,7 +383,7 @@
           name: a.name,
           archived: Boolean(a.archived),
           ...(a.archived && /^\d{4}-\d{2}-\d{2}$/.test(a.archivedDate) ? { archivedDate: a.archivedDate } : {}),
-          ...(a.categoryId ? { categoryId: a.categoryId } : {})
+          ...(normalizeCategory(a.category) ? { category: normalizeCategory(a.category) } : {})
         })),
         dailyActivities: saved.dailyActivities.filter(d => d && d.localDate && d.activityId && Number.isFinite(d.elapsedMs)),
         activeActivityId: saved.activeActivityId || null,
@@ -419,6 +430,42 @@
     ids.filter(id => yesterdayIds.has(id)).forEach(id => dailyActivity(id));
     save();
     render();
+  }
+
+  function normalizeCategory(category){
+    return typeof category === 'string' ? category.trim().toUpperCase() : '';
+  }
+
+  function setActivityCategory(id, category, changeAll = false){
+    const activity = state.activities.find(a => a.id === id);
+    if(!activity) return;
+    const oldCategory = activity.category || '';
+    const newCategory = normalizeCategory(category);
+    const activities = changeAll && oldCategory ? state.activities.filter(a => a.category === oldCategory) : [activity];
+    activities.forEach(a => newCategory ? a.category = newCategory : delete a.category);
+    save();
+    render();
+  }
+
+  function changeCategory(id, category){
+    const activity = state.activities.find(a => a.id === id);
+    const oldCategory = activity?.category || '';
+    const newCategory = normalizeCategory(category);
+    const shared = oldCategory && oldCategory !== newCategory && state.activities.filter(a => a.category === oldCategory).length > 1;
+    setActivityCategory(id, newCategory, shared && window.confirm(`"${oldCategory}" è usata da più attività. OK per cambiarle tutte, Annulla solo questa.`));
+  }
+
+  function categoryTotals(date = localDate(), now = Date.now()){
+    const totals = new Map();
+    state.dailyActivities.filter(record => record.localDate === date).forEach(record => {
+      const category = state.activities.find(activity => activity.id === record.activityId)?.category || 'SENZA CATEGORIA';
+      totals.set(category, (totals.get(category) || 0) + record.elapsedMs);
+    });
+    if(state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) === date){
+      const category = state.activities.find(activity => activity.id === state.activeActivityId)?.category || 'SENZA CATEGORIA';
+      totals.set(category, (totals.get(category) || 0) + Math.max(0, now - state.startedAt));
+    }
+    return [...totals].map(([category, elapsedMs]) => ({ category, elapsedMs }));
   }
 
   function fmt(ms){
@@ -519,12 +566,17 @@
             <div class="row-name"></div>
             <div class="row-status">${running ? 'In corso' : 'In pausa'}</div>
           </div>
+          <input class="row-category" list="categoryOptions" maxlength="60" placeholder="Categoria">
           <div class="row-time">${fmt(currentElapsed(activity))}</div>
           <button class="row-archive" title="Archivia attività">Archivia</button>
         `;
         row.querySelector('.row-name').textContent = activity.name;
+        const categoryInput = row.querySelector('.row-category');
+        categoryInput.value = activity.category || '';
+        categoryInput.addEventListener('click', event => event.stopPropagation());
+        categoryInput.addEventListener('change', () => changeCategory(activity.id, categoryInput.value));
         row.addEventListener('click', event => {
-          if(!event.target.closest('.row-archive')) toggle(activity.id);
+          if(!event.target.closest('.row-archive, .row-category')) toggle(activity.id);
         });
         row.querySelector('.row-archive').addEventListener('click', event => {
           event.stopPropagation();
@@ -540,6 +592,19 @@
     const saved = state.dailyActivities.filter(record => record.localDate === today).reduce((sum, record) => sum + record.elapsedMs, 0);
     const running = state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) === today ? Math.max(0, Date.now() - state.startedAt) : 0;
     totalEl.textContent = fmt(saved + running);
+    categoryOptionsEl.innerHTML = '';
+    [...new Set(state.activities.map(activity => activity.category).filter(Boolean))].sort().forEach(category => {
+      const option = document.createElement('option');
+      option.value = category;
+      categoryOptionsEl.appendChild(option);
+    });
+    categoryReportEl.innerHTML = '';
+    categoryTotals().forEach(({ category, elapsedMs }) => {
+      const row = document.createElement('div');
+      row.className = 'category-total';
+      row.textContent = `${category}: ${fmt(elapsedMs)}`;
+      categoryReportEl.appendChild(row);
+    });
   }
 
   function tick(){

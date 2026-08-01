@@ -28,7 +28,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
-  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn'];
+  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'categoryReport'];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const storage = new Map(saved ? [['timeTracker_activities_v1', JSON.stringify(saved)]] : []);
   const context = {
@@ -38,12 +38,12 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     console,
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
     document: { getElementById: id => elements.get(id), createElement: () => new Element() },
-    window: { addEventListener() {} },
+    window: { addEventListener() {}, confirm: () => false },
     setInterval() {}
   };
   const html = fs.readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, getState: () => state };`, context);
+  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, getState: () => state };`, context);
   return {
     ...context.api,
     elements,
@@ -150,4 +150,38 @@ const legacy = openApp({ saved: [{ id: 'legacy', name: 'Legacy', elapsed: 3_000,
 assert.equal(legacy.load().activeActivityId, 'legacy');
 assert.equal(legacy.load().dailyActivities[0].elapsedMs, 3_000);
 
-console.log('issue #1, #2 and #3 checks passed');
+const categories = openApp({
+  now: new Date(2025, 0, 16, 9).getTime(),
+  saved: {
+    activities: [
+      { id: 'alice', name: 'Email — Alice', archived: false },
+      { id: 'bob', name: 'Email — Bob', category: 'email', archived: false },
+      { id: 'team', name: 'Email — Team', category: 'EMAIL', archived: false },
+      { id: 'misc', name: 'Misc', category: 'SALES', archived: false }
+    ],
+    dailyActivities: [
+      { localDate: '2025-01-15', activityId: 'alice', elapsedMs: 100 },
+      { localDate: '2025-01-15', activityId: 'bob', elapsedMs: 200 },
+      { localDate: '2025-01-15', activityId: 'team', elapsedMs: 400 },
+      { localDate: '2025-01-15', activityId: 'misc', elapsedMs: 300 },
+      { localDate: '2025-01-16', activityId: 'alice', elapsedMs: 0 }
+    ],
+    activeActivityId: 'alice',
+    startedAt: new Date(2025, 0, 16, 8, 59, 59).getTime()
+  }
+});
+const timerBeforeCategoryEdit = JSON.stringify({ activeActivityId: categories.getState().activeActivityId, startedAt: categories.getState().startedAt, dailyActivities: categories.getState().dailyActivities });
+categories.setActivityCategory('alice', ' email ');
+assert.equal(categories.getState().activities.find(activity => activity.id === 'alice').category, 'EMAIL');
+assert.deepEqual(categories.elements.get('categoryOptions').children.map(option => option.value), ['EMAIL', 'SALES']);
+categories.setActivityCategory('alice', 'comms');
+assert.equal(categories.getState().activities.find(activity => activity.id === 'alice').category, 'COMMS');
+assert.deepEqual(categories.getState().activities.filter(activity => ['bob', 'team'].includes(activity.id)).map(activity => activity.category), ['EMAIL', 'EMAIL']);
+assert.equal(JSON.stringify(categories.categoryTotals('2025-01-15')), JSON.stringify([{ category: 'COMMS', elapsedMs: 100 }, { category: 'EMAIL', elapsedMs: 600 }, { category: 'SALES', elapsedMs: 300 }]));
+categories.setActivityCategory('bob', 'support', true);
+assert.deepEqual(categories.getState().activities.filter(activity => ['bob', 'team'].includes(activity.id)).map(activity => activity.category), ['SUPPORT', 'SUPPORT']);
+categories.setActivityCategory('misc', '');
+assert.ok(categories.categoryTotals('2025-01-15').some(total => total.category === 'SENZA CATEGORIA' && total.elapsedMs === 300));
+assert.equal(JSON.stringify({ activeActivityId: categories.getState().activeActivityId, startedAt: categories.getState().startedAt, dailyActivities: categories.getState().dailyActivities }), timerBeforeCategoryEdit);
+
+console.log('issue #1, #2, #3 and #4 checks passed');
