@@ -31,7 +31,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved, confirm = fa
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
-  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'homeView', 'reportView', 'reportsBtn', 'homeBtn', 'dailyReportBtn', 'weeklyReportBtn', 'previousPeriodBtn', 'nextPeriodBtn', 'reportPeriod', 'reportTotal', 'reportContent', 'exportReportBtn', 'exportBackupBtn', 'importBackupBtn', 'importBackupInput', 'dataMessage', 'retentionModal', 'dismissRetentionBtn', 'deleteOldDataBtn'];
+  const ids = ['appVersion', 'list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'homeView', 'reportView', 'reportsBtn', 'homeBtn', 'dailyReportBtn', 'weeklyReportBtn', 'previousPeriodBtn', 'nextPeriodBtn', 'reportPeriod', 'reportTotal', 'reportContent', 'exportReportBtn', 'exportBackupBtn', 'importBackupBtn', 'importBackupInput', 'dataMessage', 'retentionModal', 'dismissRetentionBtn', 'deleteOldDataBtn'];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const storage = new Map(saved ? [['timeTracker_activities_v1', JSON.stringify(saved)]] : []);
   const downloads = [];
@@ -62,7 +62,12 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved, confirm = fa
   };
 }
 
+const source = fs.readFileSync('index.html', 'utf8');
+assert.ok(source.includes('<title>OneTimer — Timer attività</title>'));
+assert.ok(!source.includes('fonts.googleapis.com'));
+
 const tracker = openApp();
+assert.equal(tracker.elements.get('appVersion').textContent, 'v0.1.0');
 tracker.addActivity('A');
 tracker.advance(1_000);
 tracker.addActivity('B');

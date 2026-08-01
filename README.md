@@ -1,54 +1,36 @@
 # OneTimer
 
-> **Keep every work context visible. Switch with one click.**
+> Un solo timer attivo, ogni attività a un clic di distanza.
 
-OneTimer is a local-first time tracker for people who bounce between tasks all day: email, meetings, coding, support, planning, and back again.
+OneTimer è un timer locale per chi passa spesso fra email, riunioni, sviluppo, supporto e pianificazione. Clicca un'attività per avviarla: quella precedente si mette automaticamente in pausa.
 
-Most time trackers make you search, select a project, or create another entry before you can resume work. OneTimer keeps your activities ready on screen: click one to start it, and the previous timer stops automatically. No account, setup, cloud, or timesheet ceremony.
+## Funzionalità
 
-## What it does today
+- Una sola attività attiva alla volta, con cambio o pausa in un clic.
+- Attività giornaliere, archivio, categorie, storico giornaliero e settimanale.
+- Esportazione dei report CSV e backup/import locale JSON.
+- Promemoria facoltativo per eliminare la cronologia più vecchia di 30 giorni.
+- Interfaccia italiana, desktop-first e utilizzabile anche su schermi stretti.
 
-- Create a named activity and start it immediately.
-- Keep one timer active at a time.
-- Switch to an existing activity with one click.
-- Pause the active activity with one click.
-- Keep elapsed time in the browser with `localStorage`.
-- Run as a dependency-free static page, including from a local file.
+## Usa l'app
 
-## Why OneTimer?
+Apri [OneTimer su GitHub Pages](https://tommasomazzero1.github.io/onetimer/) oppure apri [`index.html`](./index.html) in un browser moderno. Non servono installazione, build, server o dipendenze esterne.
 
-OneTimer is not built for invoicing, project management, or surveillance. It is a small personal control panel for answering one simple question at the end of the day:
+Ogni push su `master` pubblica il contenuto corrente del repository su GitHub Pages.
 
-**Where did my time go?**
+## Privacy e dati
 
-It is designed to stay out of the way while you work, then make your day easier to understand.
+I dati restano nel `localStorage` del browser: non esistono account, backend, analytics o sincronizzazione automatica. Usa il backup JSON per conservare o trasferire i dati.
 
-## Run it
+La versione dell'app è `v0.1.0`; lo schema dei dati locali resta separato ed è attualmente `1`.
 
-Open [`index.html`](./index.html) in a modern browser. There is no installation, build step, or server.
+## Sviluppo
 
-## Roadmap
+```sh
+node test.js
+git diff --check
+```
 
-The next improvements focus on keeping the one-click workflow while making the recorded time useful:
+## Licenza
 
-- Daily activity lists and recurring contexts ready for tomorrow
-- Optional categories and category totals
-- Daily and Monday–Sunday weekly reports
-- CSV export with session detail and totals
-- Local backup/import and a retention reminder
-- GitHub Pages deployment
-- Italian UI first, followed by English
-
-See the [open issues](../../issues) for the working backlog.
-
-## Privacy
-
-Your data stays in your browser. OneTimer has no account, backend, analytics, or automatic cross-device sync. Export/backup support is planned so you remain in control of your history.
-
-## Contributing
-
-Ideas, bug reports, and pull requests are welcome. Keep the core promise intact: **switching activities must be fast, obvious, and frictionless.**
-
-## License
-
-MIT — see [LICENSE](./LICENSE).
+MIT — vedi [LICENSE](./LICENSE).
