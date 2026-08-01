@@ -216,21 +216,18 @@
   }
   .row.active .row-time{ color: var(--amber); }
 
-  .row-del{
+  .row-archive{
     flex-shrink:0;
-    width: 26px; height: 26px;
-    border-radius:6px;
     border: none;
+    border-radius:6px;
+    padding: 5px 7px;
     background: transparent;
     color: var(--text-dim);
-    font-size: 15px;
+    font: 500 11px 'IBM Plex Sans', sans-serif;
     cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
     transition: background .15s, color .15s;
   }
-  .row-del:hover{ background: rgba(192,96,90,0.15); color: var(--danger); }
+  .row-archive:hover{ background: rgba(232,163,61,0.12); color: var(--amber); }
 
   .empty{
     text-align:center;
@@ -241,7 +238,7 @@
     border-radius: 10px;
   }
 
-  .manage-row{ text-align:right; margin-top: -14px; margin-bottom: 24px; }
+  .manage-row{ display:flex; justify-content:flex-end; gap:8px; margin-top: -14px; margin-bottom: 24px; }
   .manage-btn, .prep button{
     border: 1px solid var(--line);
     border-radius: 7px;
@@ -264,8 +261,10 @@
   }
   .prep h2{ margin:0 0 6px; font-size:17px; }
   .prep p{ margin:0 0 16px; color:var(--text-dim); font-size:13px; }
-  .prep-list{ display:grid; gap:8px; margin-bottom:16px; }
-  .prep-choice{ display:flex; gap:9px; align-items:center; padding:9px; border:1px solid var(--line); border-radius:7px; font-size:14px; }
+  .prep-list, .archive-list{ display:grid; gap:8px; margin-bottom:16px; }
+  .prep-choice, .archive-row{ display:flex; gap:9px; align-items:center; padding:9px; border:1px solid var(--line); border-radius:7px; font-size:14px; }
+  .archive-date{ flex:1; color:var(--text-dim); font-size:12px; }
+  .archive-row button{ margin-left:auto; }
   .prep-actions{ display:flex; justify-content:flex-end; gap:8px; }
   .prep .confirm{ background:var(--amber); border-color:var(--amber); color:#1A1400; }
   footer{
@@ -295,7 +294,10 @@
     <input type="text" id="nameInput" placeholder="Nome attività (es. Email, Riunione, Report...)" maxlength="60">
     <button id="addBtn">Avvia</button>
   </div>
-  <div class="manage-row"><button class="manage-btn" id="manageBtn">Gestisci le attività di oggi</button></div>
+  <div class="manage-row">
+    <button class="manage-btn" id="manageBtn">Gestisci le attività di oggi</button>
+    <button class="manage-btn" id="archivedBtn">Attività archiviate</button>
+  </div>
   <div id="list"></div>
 
   <div class="prep" id="prepModal" hidden>
@@ -309,6 +311,15 @@
       </div>
     </div>
   </div>
+
+  <div class="prep" id="archivedModal" hidden>
+    <div class="prep-card" role="dialog" aria-modal="true" aria-labelledby="archivedTitle">
+      <h2 id="archivedTitle">Attività archiviate</h2>
+      <p>Ripristina un'attività quando vuoi renderla di nuovo disponibile.</p>
+      <div class="archive-list" id="archivedList"></div>
+      <div class="prep-actions"><button id="closeArchivedBtn">Chiudi</button></div>
+    </div>
+  </div>
   <footer>I dati restano salvati in questo browser · nessun account richiesto</footer>
 </div>
 
@@ -319,10 +330,14 @@
   const nameInput = document.getElementById('nameInput');
   const addBtn = document.getElementById('addBtn');
   const manageBtn = document.getElementById('manageBtn');
+  const archivedBtn = document.getElementById('archivedBtn');
   const prepEl = document.getElementById('prepModal');
   const yesterdayListEl = document.getElementById('yesterdayList');
   const closePrepBtn = document.getElementById('closePrepBtn');
   const confirmPrepBtn = document.getElementById('confirmPrepBtn');
+  const archivedEl = document.getElementById('archivedModal');
+  const archivedListEl = document.getElementById('archivedList');
+  const closeArchivedBtn = document.getElementById('closeArchivedBtn');
   const localDate = (timestamp = Date.now()) => {
     const date = new Date(timestamp);
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
@@ -353,7 +368,11 @@
       if(!Array.isArray(saved.activities) || !Array.isArray(saved.dailyActivities)) return emptyState();
       return {
         activities: saved.activities.filter(a => a && a.id && a.name).map(a => ({
-          id: a.id, name: a.name, archived: Boolean(a.archived), ...(a.categoryId ? { categoryId: a.categoryId } : {})
+          id: a.id,
+          name: a.name,
+          archived: Boolean(a.archived),
+          ...(a.archived && /^\d{4}-\d{2}-\d{2}$/.test(a.archivedDate) ? { archivedDate: a.archivedDate } : {}),
+          ...(a.categoryId ? { categoryId: a.categoryId } : {})
         })),
         dailyActivities: saved.dailyActivities.filter(d => d && d.localDate && d.activityId && Number.isFinite(d.elapsedMs)),
         activeActivityId: saved.activeActivityId || null,
@@ -464,10 +483,22 @@
     render();
   }
 
-  function removeActivity(id){
+  function archiveActivity(id){
+    const activity = state.activities.find(a => a.id === id && !a.archived);
+    if(!activity) return;
     if(state.activeActivityId === id) pauseActive();
-    state.activities = state.activities.filter(a => a.id !== id);
-    state.dailyActivities = state.dailyActivities.filter(d => d.activityId !== id);
+    activity.archived = true;
+    activity.archivedDate = localDate();
+    save();
+    render();
+  }
+
+  function restoreActivity(id){
+    const activity = state.activities.find(a => a.id === id && a.archived);
+    if(!activity) return;
+    activity.archived = false;
+    delete activity.archivedDate;
+    dailyActivity(id);
     save();
     render();
   }
@@ -489,15 +520,15 @@
             <div class="row-status">${running ? 'In corso' : 'In pausa'}</div>
           </div>
           <div class="row-time">${fmt(currentElapsed(activity))}</div>
-          <button class="row-del" title="Elimina attività">✕</button>
+          <button class="row-archive" title="Archivia attività">Archivia</button>
         `;
         row.querySelector('.row-name').textContent = activity.name;
         row.addEventListener('click', event => {
-          if(!event.target.closest('.row-del')) toggle(activity.id);
+          if(!event.target.closest('.row-archive')) toggle(activity.id);
         });
-        row.querySelector('.row-del').addEventListener('click', event => {
+        row.querySelector('.row-archive').addEventListener('click', event => {
           event.stopPropagation();
-          removeActivity(activity.id);
+          archiveActivity(activity.id);
         });
         listEl.appendChild(row);
       });
@@ -505,8 +536,10 @@
     updateTotal();
   }
   function updateTotal(){
-    const total = todayActivities().reduce((sum, activity) => sum + currentElapsed(activity), 0);
-    totalEl.textContent = fmt(total);
+    const today = localDate();
+    const saved = state.dailyActivities.filter(record => record.localDate === today).reduce((sum, record) => sum + record.elapsedMs, 0);
+    const running = state.activeActivityId && state.startedAt !== null && localDate(state.startedAt) === today ? Math.max(0, Date.now() - state.startedAt) : 0;
+    totalEl.textContent = fmt(saved + running);
   }
 
   function tick(){
@@ -556,6 +589,32 @@
     prepEl.hidden = false;
   }
 
+  function openArchivedActivities(){
+    const activities = state.activities.filter(activity => activity.archived);
+    archivedListEl.innerHTML = '';
+    if(!activities.length) archivedListEl.textContent = 'Nessuna attività archiviata.';
+    activities.forEach(activity => {
+      const row = document.createElement('div');
+      row.className = 'archive-row';
+      const name = document.createElement('span');
+      name.textContent = activity.name;
+      const date = document.createElement('span');
+      date.className = 'archive-date';
+      date.textContent = `Archiviata il ${activity.archivedDate || 'data non disponibile'}`;
+      const restore = document.createElement('button');
+      restore.textContent = 'Ripristina';
+      restore.addEventListener('click', () => {
+        restoreActivity(activity.id);
+        openArchivedActivities();
+      });
+      row.appendChild(name);
+      row.appendChild(date);
+      row.appendChild(restore);
+      archivedListEl.appendChild(row);
+    });
+    archivedEl.hidden = false;
+  }
+
   function maybeOpenPreparation(){
     const today = localDate();
     if(!state.preparedDays.includes(today) && yesterdayActivities().length){
@@ -566,7 +625,9 @@
   }
 
   manageBtn.addEventListener('click', openPreparation);
+  archivedBtn.addEventListener('click', openArchivedActivities);
   closePrepBtn.addEventListener('click', () => { prepEl.hidden = true; });
+  closeArchivedBtn.addEventListener('click', () => { archivedEl.hidden = true; });
   confirmPrepBtn.addEventListener('click', () => {
     prepareToday([...yesterdayListEl.querySelectorAll('input:checked')].map(input => input.value));
     prepEl.hidden = true;

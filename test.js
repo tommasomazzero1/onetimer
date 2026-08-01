@@ -28,7 +28,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
-  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn'];
+  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn'];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const storage = new Map(saved ? [['timeTracker_activities_v1', JSON.stringify(saved)]] : []);
   const context = {
@@ -43,7 +43,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
   };
   const html = fs.readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, load, prepareToday, yesterdayActivities, openPreparation, getState: () => state };`, context);
+  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, getState: () => state };`, context);
   return {
     ...context.api,
     elements,
@@ -102,8 +102,52 @@ assert.deepEqual(reloaded.yesterdayActivities().map(activity => activity.name), 
 assert.deepEqual(reloaded.elements.get('yesterdayList').children.map(label => label.children[0].checked), [false, false, false]);
 assert.equal(reloaded.getState().dailyActivities.find(d => d.localDate === today && d.activityId === 'a0').elapsedMs, 1_000);
 
+const lifecycle = openApp({
+  saved: {
+    activities: [
+      { id: 'paused', name: 'Paused', archived: false },
+      { id: 'active', name: 'Active', archived: false },
+      { id: 'today-archived', name: 'Today archived', archived: true, archivedDate: '2025-01-15' },
+      { id: 'older-archived', name: 'Older archived', archived: true, archivedDate: '2025-01-10' }
+    ],
+    dailyActivities: [
+      { localDate: '2025-01-15', activityId: 'paused', elapsedMs: 5_000 },
+      { localDate: '2025-01-15', activityId: 'active', elapsedMs: 1_000 },
+      { localDate: '2025-01-10', activityId: 'older-archived', elapsedMs: 7_000 }
+    ],
+    activeActivityId: 'active',
+    startedAt: new Date(2025, 0, 15, 9).getTime()
+  }
+});
+const oldHistory = JSON.stringify(lifecycle.getState().dailyActivities.filter(record => record.localDate === '2025-01-10'));
+lifecycle.archiveActivity('paused');
+assert.deepEqual(lifecycle.todayActivities().map(activity => activity.id), ['active']);
+assert.equal(lifecycle.getState().activities.find(activity => activity.id === 'paused').archivedDate, '2025-01-15');
+assert.equal(lifecycle.getState().dailyActivities.find(record => record.activityId === 'paused').elapsedMs, 5_000);
+lifecycle.advance(2_000);
+lifecycle.archiveActivity('active');
+assert.equal(lifecycle.getState().activeActivityId, null);
+assert.equal(lifecycle.getState().dailyActivities.find(record => record.activityId === 'active').elapsedMs, 3_000);
+assert.equal(lifecycle.elements.get('totalTime').textContent, '00:00:08');
+lifecycle.openArchivedActivities();
+assert.equal(lifecycle.elements.get('archivedModal').hidden, false);
+assert.deepEqual(lifecycle.elements.get('archivedList').children.map(row => row.children[1].textContent), [
+  'Archiviata il 2025-01-15', 'Archiviata il 2025-01-15', 'Archiviata il 2025-01-15', 'Archiviata il 2025-01-10'
+]);
+
+const tomorrow = openApp({ now: new Date(2025, 0, 16, 9).getTime(), saved: lifecycle.saved() });
+assert.deepEqual(tomorrow.yesterdayActivities(), []);
+lifecycle.restoreActivity('today-archived');
+assert.equal(lifecycle.getState().activeActivityId, null);
+const restoredToday = lifecycle.getState().dailyActivities.find(record => record.activityId === 'today-archived');
+assert.equal(restoredToday.localDate, '2025-01-15');
+assert.equal(restoredToday.elapsedMs, 0);
+lifecycle.restoreActivity('older-archived');
+assert.equal(lifecycle.getState().dailyActivities.find(record => record.localDate === '2025-01-10' && record.activityId === 'older-archived').elapsedMs, 7_000);
+assert.equal(JSON.stringify(lifecycle.getState().dailyActivities.filter(record => record.localDate === '2025-01-10')), oldHistory);
+
 const legacy = openApp({ saved: [{ id: 'legacy', name: 'Legacy', elapsed: 3_000, running: true, startedAt: new Date(2025, 0, 15, 8).getTime() }] });
 assert.equal(legacy.load().activeActivityId, 'legacy');
 assert.equal(legacy.load().dailyActivities[0].elapsedMs, 3_000);
 
-console.log('issue #1 and #2 checks passed');
+console.log('issue #1, #2 and #3 checks passed');
