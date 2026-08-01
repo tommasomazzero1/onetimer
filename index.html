@@ -392,11 +392,12 @@
 
 <script>
   const APP_VERSION = '0.1.0';
+  const COMMIT_VERSION = '__COMMIT_VERSION__';
   const STORAGE_KEY = 'timeTracker_activities_v1';
   const SCHEMA_VERSION = 1;
   const RETENTION_DAYS = 30;
   const appVersionEl = document.getElementById('appVersion');
-  appVersionEl.textContent = `v${APP_VERSION}`;
+  appVersionEl.textContent = `v${APP_VERSION}+${COMMIT_VERSION === '__COMMIT_VERSION__' ? 'local' : COMMIT_VERSION}`;
   const listEl = document.getElementById('list');
   const totalEl = document.getElementById('totalTime');
   const nameInput = document.getElementById('nameInput');

@@ -68,7 +68,7 @@ assert.ok(source.includes('<title>OneTimer — Timer attività</title>'));
 assert.ok(!source.includes('fonts.googleapis.com'));
 
 const tracker = openApp();
-assert.equal(tracker.elements.get('appVersion').textContent, 'v0.1.0');
+assert.equal(tracker.elements.get('appVersion').textContent, 'v0.1.0+local');
 tracker.addActivity('A');
 tracker.advance(1_000);
 tracker.addActivity('B');
