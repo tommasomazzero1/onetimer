@@ -209,9 +209,25 @@
     width:120px; padding:5px 7px; background:transparent; color:var(--text-dim);
     border:1px solid var(--line); border-radius:6px; font:11px 'IBM Plex Sans', sans-serif;
   }
-  .category-report{ margin:0 0 24px; padding:12px 14px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
-  .category-report h2{ margin:0 0 8px; color:var(--text-dim); font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; }
-  .category-total{ display:flex; justify-content:space-between; font:12px 'IBM Plex Mono', monospace; }
+  .view-nav{ border:1px solid var(--line); border-radius:7px; padding:8px 10px; background:transparent; color:var(--text-dim); cursor:pointer; font:500 12px 'IBM Plex Sans', sans-serif; }
+  .view-nav:hover, .view-nav.active{ color:var(--text); border-color:var(--amber-dim); }
+  .report-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  .report-head h2{ margin:0; font-size:17px; }
+  .report-controls{ display:flex; gap:8px; margin-bottom:16px; }
+  .report-controls button{ flex:1; }
+  .report-period{ display:grid; grid-template-columns:auto 1fr auto; gap:8px; align-items:center; margin-bottom:16px; }
+  .report-period button{ border:1px solid var(--line); border-radius:7px; padding:8px 10px; background:transparent; color:var(--text); cursor:pointer; }
+  .report-period span{ text-align:center; font:500 13px 'IBM Plex Mono', monospace; color:var(--amber); }
+  .report-section{ margin:0 0 16px; padding:12px 14px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .report-section h3{ margin:0 0 9px; color:var(--text-dim); font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; }
+  .report-row{ display:flex; justify-content:space-between; gap:12px; padding:5px 0; font-size:13px; }
+  .report-row span:last-child{ flex-shrink:0; font:12px 'IBM Plex Mono', monospace; }
+  .report-category{ color:var(--text-dim); font-size:11px; margin-left:5px; }
+  .report-day{ border-top:1px solid var(--line); padding:9px 0; }
+  .report-day:first-child{ border-top:0; padding-top:0; }
+  .report-day:last-child{ padding-bottom:0; }
+  .report-day-title{ display:flex; justify-content:space-between; font-size:13px; font-weight:500; }
+  .report-day .report-row{ padding-left:10px; color:var(--text-dim); font-size:12px; }
 
   .row-time{
     font-family: 'IBM Plex Mono', monospace;
@@ -287,27 +303,28 @@
 <body>
 <div class="wrap">
 
-  <div class="masthead">
-    <h1>Pannello Attività</h1>
-    <span class="tag">Solo una accesa alla volta</span>
-  </div>
+  <section id="homeView">
+    <div class="masthead">
+      <h1>Pannello Attività</h1>
+      <button class="view-nav" id="reportsBtn">Storico e report</button>
+    </div>
 
-  <div class="total-strip">
-    <span class="label">Totale registrato oggi</span>
-    <span class="value" id="totalTime">00:00:00</span>
-  </div>
+    <div class="total-strip">
+      <span class="label">Totale registrato oggi</span>
+      <span class="value" id="totalTime">00:00:00</span>
+    </div>
 
-  <div class="add-row">
-    <input type="text" id="nameInput" placeholder="Nome attività (es. Email, Riunione, Report...)" maxlength="60">
-    <button id="addBtn">Avvia</button>
-  </div>
-  <div class="manage-row">
-    <button class="manage-btn" id="manageBtn">Gestisci le attività di oggi</button>
-    <button class="manage-btn" id="archivedBtn">Attività archiviate</button>
-  </div>
-  <datalist id="categoryOptions"></datalist>
-  <div class="category-report"><h2>Totali di oggi per categoria</h2><div id="categoryReport"></div></div>
-  <div id="list"></div>
+    <div class="add-row">
+      <input type="text" id="nameInput" placeholder="Nome attività (es. Email, Riunione, Report...)" maxlength="60">
+      <button id="addBtn">Avvia</button>
+    </div>
+    <div class="manage-row">
+      <button class="manage-btn" id="manageBtn">Gestisci le attività di oggi</button>
+      <button class="manage-btn" id="archivedBtn">Attività archiviate</button>
+    </div>
+    <datalist id="categoryOptions"></datalist>
+    <div id="list"></div>
+  </section>
 
   <div class="prep" id="prepModal" hidden>
     <div class="prep-card" role="dialog" aria-modal="true" aria-labelledby="prepTitle">
@@ -329,6 +346,14 @@
       <div class="prep-actions"><button id="closeArchivedBtn">Chiudi</button></div>
     </div>
   </div>
+
+  <section id="reportView" hidden>
+    <div class="report-head"><h2>Storico e report</h2><button class="view-nav" id="homeBtn">Torna al timer</button></div>
+    <div class="report-controls"><button class="view-nav active" id="dailyReportBtn">Giorno</button><button class="view-nav" id="weeklyReportBtn">Settimana</button></div>
+    <div class="report-period"><button id="previousPeriodBtn" aria-label="Periodo precedente">←</button><span id="reportPeriod"></span><button id="nextPeriodBtn" aria-label="Periodo successivo">→</button></div>
+    <div class="total-strip"><span class="label">Totale periodo</span><span class="value" id="reportTotal">00:00:00</span></div>
+    <div id="reportContent"></div>
+  </section>
   <footer>I dati restano salvati in questo browser · nessun account richiesto</footer>
 </div>
 
@@ -348,11 +373,39 @@
   const archivedListEl = document.getElementById('archivedList');
   const closeArchivedBtn = document.getElementById('closeArchivedBtn');
   const categoryOptionsEl = document.getElementById('categoryOptions');
-  const categoryReportEl = document.getElementById('categoryReport');
+  const homeViewEl = document.getElementById('homeView');
+  const reportViewEl = document.getElementById('reportView');
+  const reportsBtn = document.getElementById('reportsBtn');
+  const homeBtn = document.getElementById('homeBtn');
+  const dailyReportBtn = document.getElementById('dailyReportBtn');
+  const weeklyReportBtn = document.getElementById('weeklyReportBtn');
+  const previousPeriodBtn = document.getElementById('previousPeriodBtn');
+  const nextPeriodBtn = document.getElementById('nextPeriodBtn');
+  const reportPeriodEl = document.getElementById('reportPeriod');
+  const reportTotalEl = document.getElementById('reportTotal');
+  const reportContentEl = document.getElementById('reportContent');
   const localDate = (timestamp = Date.now()) => {
     const date = new Date(timestamp);
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
   };
+  function dateForLocalDate(date){
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+  function shiftLocalDate(date, days){
+    const value = dateForLocalDate(date);
+    value.setDate(value.getDate() + days);
+    return localDate(value);
+  }
+  function mondayFor(date){
+    const value = dateForLocalDate(date);
+    value.setDate(value.getDate() - (value.getDay() + 6) % 7);
+    return localDate(value);
+  }
+  function weekDates(date){
+    const monday = mondayFor(date);
+    return Array.from({ length: 7 }, (_, index) => shiftLocalDate(monday, index));
+  }
 
   function emptyState(){
     return { activities: [], dailyActivities: [], activeActivityId: null, startedAt: null, preparedDays: [] };
@@ -394,6 +447,8 @@
   }
 
   let state = load();
+  let reportMode = 'daily';
+  let reportDate = localDate();
 
   function save(){
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -466,6 +521,112 @@
       totals.set(category, (totals.get(category) || 0) + Math.max(0, now - state.startedAt));
     }
     return [...totals].map(([category, elapsedMs]) => ({ category, elapsedMs }));
+  }
+
+  function reportData(dates, now = Date.now()){
+    const selected = new Set(dates);
+    const activities = new Map(state.activities.map(activity => [activity.id, activity]));
+    const days = new Map(dates.map(date => [date, { date, elapsedMs: 0, activities: new Map(), categories: new Map() }]));
+    function add(date, activityId, elapsedMs){
+      if(!elapsedMs || !days.has(date)) return;
+      const activity = activities.get(activityId);
+      if(!activity) return;
+      const category = activity.category || 'SENZA CATEGORIA';
+      const day = days.get(date);
+      const key = `${activity.name}\u0000${category}`;
+      const group = day.activities.get(key) || { name: activity.name, category, elapsedMs: 0 };
+      group.elapsedMs += elapsedMs;
+      day.activities.set(key, group);
+      day.categories.set(category, (day.categories.get(category) || 0) + elapsedMs);
+      day.elapsedMs += elapsedMs;
+    }
+    state.dailyActivities.filter(record => selected.has(record.localDate)).forEach(record => add(record.localDate, record.activityId, record.elapsedMs));
+    if(state.activeActivityId && state.startedAt !== null){
+      dates.forEach(date => {
+        const start = dateForLocalDate(date).getTime();
+        const end = dateForLocalDate(shiftLocalDate(date, 1)).getTime();
+        add(date, state.activeActivityId, Math.max(0, Math.min(now, end) - Math.max(state.startedAt, start)));
+      });
+    }
+    const summary = { elapsedMs: 0, activities: new Map(), categories: new Map() };
+    days.forEach(day => {
+      summary.elapsedMs += day.elapsedMs;
+      day.activities.forEach(row => {
+        const key = `${row.name}\u0000${row.category}`;
+        const group = summary.activities.get(key) || { ...row, elapsedMs: 0 };
+        group.elapsedMs += row.elapsedMs;
+        summary.activities.set(key, group);
+      });
+      day.categories.forEach((elapsedMs, category) => summary.categories.set(category, (summary.categories.get(category) || 0) + elapsedMs));
+    });
+    const rows = map => [...map.values()].sort((a, b) => (a.name || a.category).localeCompare(b.name || b.category) || (a.category || '').localeCompare(b.category || ''));
+    return { total: summary.elapsedMs, activities: rows(summary.activities), categories: [...summary.categories].map(([category, elapsedMs]) => ({ category, elapsedMs })).sort((a, b) => a.category.localeCompare(b.category)), days: dates.map(date => ({ ...days.get(date), activities: rows(days.get(date).activities) })) };
+  }
+
+  function reportRow(row, category = false){
+    const element = document.createElement('div');
+    element.className = 'report-row';
+    const label = document.createElement('span');
+    label.textContent = category ? row.category : row.name;
+    if(!category){
+      const detail = document.createElement('span');
+      detail.className = 'report-category';
+      detail.textContent = row.category;
+      label.appendChild(detail);
+    }
+    const value = document.createElement('span');
+    value.textContent = fmt(row.elapsedMs);
+    element.append(label, value);
+    return element;
+  }
+
+  function reportSection(title, rows, category = false){
+    const section = document.createElement('section');
+    section.className = 'report-section';
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    section.appendChild(heading);
+    rows.forEach(row => section.appendChild(reportRow(row, category)));
+    return section;
+  }
+
+  function renderReport(){
+    const dates = reportMode === 'daily' ? [reportDate] : weekDates(reportDate);
+    const data = reportData(dates);
+    const formatter = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    reportPeriodEl.textContent = reportMode === 'daily' ? formatter.format(dateForLocalDate(reportDate)) : `${new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' }).format(dateForLocalDate(dates[0]))} – ${new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', year: 'numeric' }).format(dateForLocalDate(dates[6]))}`;
+    reportTotalEl.textContent = fmt(data.total);
+    dailyReportBtn.classList.toggle('active', reportMode === 'daily');
+    weeklyReportBtn.classList.toggle('active', reportMode === 'weekly');
+    reportContentEl.innerHTML = '';
+    if(!data.total){
+      reportContentEl.innerHTML = '<div class="empty">Nessun tempo registrato in questo periodo.</div>';
+      return;
+    }
+    reportContentEl.appendChild(reportSection('Attività', data.activities));
+    reportContentEl.appendChild(reportSection('Categorie', data.categories, true));
+    if(reportMode === 'weekly'){
+      const breakdown = document.createElement('section');
+      breakdown.className = 'report-section';
+      const heading = document.createElement('h3');
+      heading.textContent = 'Giorno per giorno';
+      breakdown.appendChild(heading);
+      data.days.forEach(day => {
+        const item = document.createElement('div');
+        item.className = 'report-day';
+        const title = document.createElement('div');
+        title.className = 'report-day-title';
+        const label = document.createElement('span');
+        label.textContent = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric' }).format(dateForLocalDate(day.date));
+        const value = document.createElement('span');
+        value.textContent = fmt(day.elapsedMs);
+        title.append(label, value);
+        item.appendChild(title);
+        day.activities.forEach(row => item.appendChild(reportRow(row)));
+        breakdown.appendChild(item);
+      });
+      reportContentEl.appendChild(breakdown);
+    }
   }
 
   function fmt(ms){
@@ -602,13 +763,6 @@
       option.value = category;
       categoryOptionsEl.appendChild(option);
     });
-    categoryReportEl.innerHTML = '';
-    categoryTotals().forEach(({ category, elapsedMs }) => {
-      const row = document.createElement('div');
-      row.className = 'category-total';
-      row.textContent = `${category}: ${fmt(elapsedMs)}`;
-      categoryReportEl.appendChild(row);
-    });
   }
 
   function tick(){
@@ -693,8 +847,25 @@
     }
   }
 
+  function showReports(){
+    homeViewEl.hidden = true;
+    reportViewEl.hidden = false;
+    renderReport();
+  }
+  function showHome(){
+    reportViewEl.hidden = true;
+    homeViewEl.hidden = false;
+    nameInput.focus();
+  }
+
   manageBtn.addEventListener('click', openPreparation);
   archivedBtn.addEventListener('click', openArchivedActivities);
+  reportsBtn.addEventListener('click', showReports);
+  homeBtn.addEventListener('click', showHome);
+  dailyReportBtn.addEventListener('click', () => { reportMode = 'daily'; renderReport(); });
+  weeklyReportBtn.addEventListener('click', () => { reportMode = 'weekly'; reportDate = mondayFor(reportDate); renderReport(); });
+  previousPeriodBtn.addEventListener('click', () => { reportDate = shiftLocalDate(reportDate, reportMode === 'daily' ? -1 : -7); renderReport(); });
+  nextPeriodBtn.addEventListener('click', () => { reportDate = shiftLocalDate(reportDate, reportMode === 'daily' ? 1 : 7); renderReport(); });
   closePrepBtn.addEventListener('click', () => { prepEl.hidden = true; });
   closeArchivedBtn.addEventListener('click', () => { archivedEl.hidden = true; });
   confirmPrepBtn.addEventListener('click', () => {

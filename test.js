@@ -10,10 +10,12 @@ class Element {
     this.checked = false;
     this.hidden = true;
     this.textContent = '';
+    this.classList = { toggle() {} };
   }
   set innerHTML(value) { this.html = value; this.children = []; }
   get innerHTML() { return this.html; }
   appendChild(child) { this.children.push(child); }
+  append(...children) { children.forEach(child => this.appendChild(child)); }
   addEventListener() {}
   focus() {}
   querySelector(selector) {
@@ -28,7 +30,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
-  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'categoryReport'];
+  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'homeView', 'reportView', 'reportsBtn', 'homeBtn', 'dailyReportBtn', 'weeklyReportBtn', 'previousPeriodBtn', 'nextPeriodBtn', 'reportPeriod', 'reportTotal', 'reportContent'];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const storage = new Map(saved ? [['timeTracker_activities_v1', JSON.stringify(saved)]] : []);
   const windowEvents = new Map();
@@ -44,7 +46,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
   };
   const html = fs.readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, getState: () => state };`, context);
+  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, reportData, weekDates, mondayFor, shiftLocalDate, renderReport, getState: () => state };`, context);
   return {
     ...context.api,
     elements,
@@ -227,4 +229,51 @@ categories.setActivityCategory('misc', '');
 assert.ok(categories.categoryTotals('2025-01-15').some(total => total.category === 'SENZA CATEGORIA' && total.elapsedMs === 300));
 assert.equal(JSON.stringify({ activeActivityId: categories.getState().activeActivityId, startedAt: categories.getState().startedAt, dailyActivities: categories.getState().dailyActivities }), timerBeforeCategoryEdit);
 
-console.log('issue #1, #2, #3, #4 and #5 checks passed');
+const reports = openApp({
+  now: new Date(2025, 0, 15, 9).getTime(),
+  saved: {
+    activities: [
+      { id: 'email-1', name: 'Email', category: 'COMMS', archived: false },
+      { id: 'email-2', name: 'Email', category: 'COMMS', archived: true },
+      { id: 'email-sales', name: 'Email', category: 'SALES', archived: false },
+      { id: 'planning', name: 'Planning', archived: false }
+    ],
+    dailyActivities: [
+      { localDate: '2025-01-13', activityId: 'email-1', elapsedMs: 60_000 },
+      { localDate: '2025-01-15', activityId: 'email-1', elapsedMs: 120_000 },
+      { localDate: '2025-01-15', activityId: 'email-2', elapsedMs: 180_000 },
+      { localDate: '2025-01-15', activityId: 'email-sales', elapsedMs: 240_000 },
+      { localDate: '2025-01-15', activityId: 'planning', elapsedMs: 300_000 }
+    ],
+    activeActivityId: null,
+    startedAt: null
+  }
+});
+const reportStateBefore = JSON.stringify(reports.getState());
+const wednesdayReport = reports.reportData(['2025-01-15']);
+assert.equal(wednesdayReport.total, 840_000);
+assert.deepEqual(JSON.parse(JSON.stringify(wednesdayReport.activities)), [
+  { name: 'Email', category: 'COMMS', elapsedMs: 300_000 },
+  { name: 'Email', category: 'SALES', elapsedMs: 240_000 },
+  { name: 'Planning', category: 'SENZA CATEGORIA', elapsedMs: 300_000 }
+]);
+assert.deepEqual(JSON.parse(JSON.stringify(wednesdayReport.categories)), [
+  { category: 'COMMS', elapsedMs: 300_000 },
+  { category: 'SALES', elapsedMs: 240_000 },
+  { category: 'SENZA CATEGORIA', elapsedMs: 300_000 }
+]);
+const week = reports.weekDates('2025-01-15');
+assert.deepEqual(JSON.parse(JSON.stringify(week)), ['2025-01-13', '2025-01-14', '2025-01-15', '2025-01-16', '2025-01-17', '2025-01-18', '2025-01-19']);
+assert.equal(reports.reportData(['2025-01-13']).total, 60_000);
+assert.equal(JSON.stringify(reports.weekDates('2025-01-19')), JSON.stringify(week));
+assert.deepEqual(JSON.parse(JSON.stringify(reports.weekDates('2025-01-20'))), ['2025-01-20', '2025-01-21', '2025-01-22', '2025-01-23', '2025-01-24', '2025-01-25', '2025-01-26']);
+const weeklyReport = reports.reportData(week);
+assert.equal(weeklyReport.total, 900_000);
+assert.deepEqual(JSON.parse(JSON.stringify(weeklyReport.days.map(day => day.elapsedMs))), [60_000, 0, 840_000, 0, 0, 0, 0]);
+assert.equal(weeklyReport.total, weeklyReport.days.reduce((sum, day) => sum + day.elapsedMs, 0));
+assert.deepEqual(JSON.parse(JSON.stringify(reports.reportData(['2025-01-14']).activities)), []);
+assert.equal(JSON.stringify(reports.getState()), reportStateBefore);
+reports.setActivityCategory('email-1', 'support');
+assert.ok(reports.reportData(week).categories.some(row => row.category === 'SUPPORT' && row.elapsedMs === 180_000));
+
+console.log('issue #1, #2, #3, #4, #5 and #6 checks passed');
