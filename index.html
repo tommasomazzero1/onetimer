@@ -261,7 +261,10 @@
     border-radius: 10px;
   }
 
-  .manage-row{ display:flex; justify-content:flex-end; gap:8px; margin-top: -14px; margin-bottom: 24px; }
+  .manage-row{ display:flex; justify-content:flex-end; gap:8px; margin-top: -14px; margin-bottom: 12px; flex-wrap:wrap; }
+  .manage-row:last-of-type{ margin-bottom:24px; }
+  .message{ min-height:18px; margin:-6px 0 16px; color:var(--text-dim); font-size:12px; }
+  .message.error{ color:var(--danger); }
   .manage-btn, .prep button{
     border: 1px solid var(--line);
     border-radius: 7px;
@@ -322,6 +325,12 @@
       <button class="manage-btn" id="manageBtn">Gestisci le attività di oggi</button>
       <button class="manage-btn" id="archivedBtn">Attività archiviate</button>
     </div>
+    <div class="manage-row">
+      <button class="manage-btn" id="exportBackupBtn">Esporta backup</button>
+      <button class="manage-btn" id="importBackupBtn">Importa backup</button>
+      <input id="importBackupInput" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p class="message" id="dataMessage" role="status" hidden></p>
     <datalist id="categoryOptions"></datalist>
     <div id="list"></div>
   </section>
@@ -347,6 +356,14 @@
     </div>
   </div>
 
+  <div class="prep" id="retentionModal" hidden>
+    <div class="prep-card" role="dialog" aria-modal="true" aria-labelledby="retentionTitle">
+      <h2 id="retentionTitle">Cronologia locale</h2>
+      <p>Ci sono registrazioni di più di 30 giorni fa. Puoi eliminarle definitivamente mantenendo le attività.</p>
+      <div class="prep-actions"><button id="dismissRetentionBtn">Non oggi</button><button class="confirm" id="deleteOldDataBtn">Elimina dati meno recenti</button></div>
+    </div>
+  </div>
+
   <section id="reportView" hidden>
     <div class="report-head"><h2>Storico e report</h2><button class="view-nav" id="homeBtn">Torna al timer</button></div>
     <div class="report-controls"><button class="view-nav active" id="dailyReportBtn">Giorno</button><button class="view-nav" id="weeklyReportBtn">Settimana</button></div>
@@ -360,6 +377,8 @@
 
 <script>
   const STORAGE_KEY = 'timeTracker_activities_v1';
+  const SCHEMA_VERSION = 1;
+  const RETENTION_DAYS = 30;
   const listEl = document.getElementById('list');
   const totalEl = document.getElementById('totalTime');
   const nameInput = document.getElementById('nameInput');
@@ -386,6 +405,13 @@
   const reportTotalEl = document.getElementById('reportTotal');
   const reportContentEl = document.getElementById('reportContent');
   const exportReportBtn = document.getElementById('exportReportBtn');
+  const exportBackupBtn = document.getElementById('exportBackupBtn');
+  const importBackupBtn = document.getElementById('importBackupBtn');
+  const importBackupInput = document.getElementById('importBackupInput');
+  const dataMessageEl = document.getElementById('dataMessage');
+  const retentionEl = document.getElementById('retentionModal');
+  const dismissRetentionBtn = document.getElementById('dismissRetentionBtn');
+  const deleteOldDataBtn = document.getElementById('deleteOldDataBtn');
   const localDate = (timestamp = Date.now()) => {
     const date = new Date(timestamp);
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
@@ -410,52 +436,64 @@
   }
 
   function emptyState(){
-    return { activities: [], dailyActivities: [], activeActivityId: null, startedAt: null, preparedDays: [] };
+    return { activities: [], dailyActivities: [], activeActivityId: null, startedAt: null, preparedDays: [], retentionNoticeDay: null };
   }
-
+  function isLocalDate(value){
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && localDate(dateForLocalDate(value)) === value;
+  }
+  function storedState(saved){
+    if(!saved || !Array.isArray(saved.activities) || !Array.isArray(saved.dailyActivities)) return null;
+    const activities = saved.activities.filter(a => a && typeof a.id === 'string' && a.id && typeof a.name === 'string' && a.name).map(a => ({
+      id: a.id, name: a.name, archived: Boolean(a.archived),
+      ...(a.archived && isLocalDate(a.archivedDate) ? { archivedDate: a.archivedDate } : {}),
+      ...(normalizeCategory(a.category) ? { category: normalizeCategory(a.category) } : {})
+    }));
+    const ids = new Set(activities.map(a => a.id));
+    return {
+      activities,
+      dailyActivities: saved.dailyActivities.filter(d => d && isLocalDate(d.localDate) && ids.has(d.activityId) && Number.isFinite(d.elapsedMs) && d.elapsedMs >= 0).map(d => ({ localDate: d.localDate, activityId: d.activityId, elapsedMs: d.elapsedMs })),
+      activeActivityId: ids.has(saved.activeActivityId) ? saved.activeActivityId : null,
+      startedAt: Number.isFinite(saved.startedAt) ? saved.startedAt : null,
+      preparedDays: [...new Set((saved.preparedDays || []).filter(isLocalDate))],
+      retentionNoticeDay: isLocalDate(saved.retentionNoticeDay) ? saved.retentionNoticeDay : null
+    };
+  }
+  function storageData(value){
+    return { schemaVersion: SCHEMA_VERSION, activities: value.activities, dailyActivities: value.dailyActivities, activeActivityId: value.activeActivityId, startedAt: value.startedAt, preparedDays: value.preparedDays, retentionNoticeDay: value.retentionNoticeDay };
+  }
+  let storageSupported = true;
+  function save(value = state, replaceUnsupported = false){
+    if(!storageSupported && !replaceUnsupported) return false;
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(storageData(value))); storageSupported = true; return true; }
+    catch(e){ console.error('Salvataggio fallito', e); return false; }
+  }
   function load(){
     try{
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if(!saved) return emptyState();
-
-      // Preserve data from the original single-total version as today's total.
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return emptyState();
+      const saved = JSON.parse(raw);
       if(Array.isArray(saved)){
         const today = localDate();
-        const active = saved.find(a => a.running && Number.isFinite(a.startedAt));
-        return {
-          activities: saved.map(({ id, name }) => ({ id, name, archived: false })),
-          dailyActivities: saved.map(({ id, elapsed = 0 }) => ({ localDate: today, activityId: id, elapsedMs: elapsed })),
-          activeActivityId: active ? active.id : null,
-          startedAt: active ? active.startedAt : null,
-          preparedDays: []
+        const active = saved.find(a => a && a.running && Number.isFinite(a.startedAt));
+        const migrated = {
+          activities: saved.filter(a => a && typeof a.id === 'string' && a.id && typeof a.name === 'string' && a.name).map(({ id, name }) => ({ id, name, archived: false })),
+          dailyActivities: saved.filter(a => a && typeof a.id === 'string' && a.id && Number.isFinite(a.elapsed) && a.elapsed >= 0).map(({ id, elapsed }) => ({ localDate: today, activityId: id, elapsedMs: elapsed })),
+          activeActivityId: active ? active.id : null, startedAt: active ? active.startedAt : null, preparedDays: [], retentionNoticeDay: null
         };
+        save(migrated); // Keep the legacy value unless this versioned write succeeds.
+        return migrated;
       }
-
-      if(!Array.isArray(saved.activities) || !Array.isArray(saved.dailyActivities)) return emptyState();
-      return {
-        activities: saved.activities.filter(a => a && a.id && a.name).map(a => ({
-          id: a.id,
-          name: a.name,
-          archived: Boolean(a.archived),
-          ...(a.archived && /^\d{4}-\d{2}-\d{2}$/.test(a.archivedDate) ? { archivedDate: a.archivedDate } : {}),
-          ...(normalizeCategory(a.category) ? { category: normalizeCategory(a.category) } : {})
-        })),
-        dailyActivities: saved.dailyActivities.filter(d => d && d.localDate && d.activityId && Number.isFinite(d.elapsedMs)),
-        activeActivityId: saved.activeActivityId || null,
-        startedAt: Number.isFinite(saved.startedAt) ? saved.startedAt : null,
-        preparedDays: [...new Set((saved.preparedDays || []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))]
-      };
+      if(saved.schemaVersion !== undefined && saved.schemaVersion !== SCHEMA_VERSION){ storageSupported = false; return emptyState(); }
+      const result = storedState(saved);
+      if(!result) return emptyState();
+      if(saved.schemaVersion === undefined) save(result);
+      return result;
     }catch(e){ return emptyState(); }
   }
 
   let state = load();
   let reportMode = 'daily';
   let reportDate = localDate();
-
-  function save(){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-    catch(e){ console.error('Salvataggio fallito', e); }
-  }
 
   function dailyActivity(activityId, date = localDate()){
     let record = state.dailyActivities.find(d => d.activityId === activityId && d.localDate === date);
@@ -586,6 +624,79 @@
     link.download = `onetimer-${dates[0]}${dates.length === 7 ? `-${dates[6]}` : ''}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
+  }
+  function showDataMessage(text, error = false){
+    dataMessageEl.textContent = text;
+    dataMessageEl.className = `message${error ? ' error' : ''}`;
+    dataMessageEl.hidden = !text;
+  }
+  function backupSnapshot(now = Date.now()){
+    const dailyActivities = state.dailyActivities.map(record => ({ ...record }));
+    if(state.activeActivityId && state.startedAt !== null && state.activities.some(activity => activity.id === state.activeActivityId)){
+      let startedAt = state.startedAt;
+      while(startedAt < now){
+        const midnight = new Date(startedAt);
+        midnight.setHours(24, 0, 0, 0);
+        const endsAt = Math.min(now, midnight.getTime());
+        let record = dailyActivities.find(d => d.activityId === state.activeActivityId && d.localDate === localDate(startedAt));
+        if(!record){ record = { localDate: localDate(startedAt), activityId: state.activeActivityId, elapsedMs: 0 }; dailyActivities.push(record); }
+        record.elapsedMs += endsAt - startedAt;
+        startedAt = endsAt;
+      }
+    }
+    return { schemaVersion: SCHEMA_VERSION, exportedAt: new Date(now).toISOString(), activities: state.activities.map(activity => ({ ...activity })), dailyActivities };
+  }
+  function validBackup(backup){
+    if(!backup || typeof backup !== 'object' || Array.isArray(backup) || backup.schemaVersion !== SCHEMA_VERSION || typeof backup.exportedAt !== 'string' || Number.isNaN(Date.parse(backup.exportedAt)) || !Array.isArray(backup.activities) || !Array.isArray(backup.dailyActivities)) return null;
+    if(Object.keys(backup).length !== 4 || Object.keys(backup).some(key => !['schemaVersion', 'exportedAt', 'activities', 'dailyActivities'].includes(key))) return null;
+    const validActivity = activity => {
+      if(!activity || typeof activity !== 'object' || Array.isArray(activity) || typeof activity.id !== 'string' || !activity.id || typeof activity.name !== 'string' || !activity.name || typeof activity.archived !== 'boolean') return false;
+      if(Object.keys(activity).some(key => !['id', 'name', 'archived', 'archivedDate', 'category'].includes(key))) return false;
+      return (!('archivedDate' in activity) || (activity.archived && isLocalDate(activity.archivedDate))) && (!('category' in activity) || (typeof activity.category === 'string' && activity.category === normalizeCategory(activity.category) && activity.category));
+    };
+    if(!backup.activities.every(validActivity)) return null;
+    const ids = new Set(backup.activities.map(activity => activity.id));
+    if(ids.size !== backup.activities.length || !backup.dailyActivities.every(record => record && typeof record === 'object' && !Array.isArray(record) && Object.keys(record).length === 3 && isLocalDate(record.localDate) && ids.has(record.activityId) && Number.isFinite(record.elapsedMs) && record.elapsedMs >= 0)) return null;
+    const records = new Set(backup.dailyActivities.map(record => `${record.localDate}\u0000${record.activityId}`));
+    if(records.size !== backup.dailyActivities.length) return null;
+    return { activities: backup.activities.map(activity => ({ ...activity })), dailyActivities: backup.dailyActivities.map(record => ({ ...record })) };
+  }
+  function exportBackup(){
+    try{
+      const now = Date.now();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([JSON.stringify(backupSnapshot(now), null, 2)], { type: 'application/json' }));
+      link.download = `onetimer-backup-${localDate(now)}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      showDataMessage('Backup esportato.');
+      return true;
+    }catch(e){ showDataMessage('Impossibile esportare il backup.', true); return false; }
+  }
+  function importBackupText(text){
+    let imported;
+    try{ imported = validBackup(JSON.parse(text)); }
+    catch(e){ imported = null; }
+    if(!imported){ showDataMessage('Backup non valido o non supportato.', true); return false; }
+    if(!window.confirm('Sostituire tutte le attività e la cronologia attuali?')) return false;
+    const replacement = { ...imported, activeActivityId: null, startedAt: null, preparedDays: [], retentionNoticeDay: null };
+    if(!save(replacement, true)){ showDataMessage('Impossibile salvare il backup importato.', true); return false; }
+    state = replacement;
+    reportDate = state.dailyActivities.reduce((latest, record) => !latest || record.localDate > latest ? record.localDate : latest, null) || localDate();
+    render();
+    showReports();
+    maybeShowRetentionNotice();
+    showDataMessage('Backup importato.');
+    return true;
+  }
+  function readBackupFile(file){
+    if(!file){ showDataMessage('Seleziona un file JSON.', true); return; }
+    try{
+      const reader = new FileReader();
+      reader.onerror = () => showDataMessage('Impossibile leggere il file di backup.', true);
+      reader.onload = () => importBackupText(String(reader.result));
+      reader.readAsText(file);
+    }catch(e){ showDataMessage('Impossibile leggere il file di backup.', true); }
   }
 
   function reportRow(row, category = false){
@@ -871,6 +982,34 @@
       openPreparation();
     }
   }
+  function hasExpiredData(){
+    const cutoff = shiftLocalDate(localDate(), -RETENTION_DAYS);
+    return state.dailyActivities.some(record => record.localDate < cutoff);
+  }
+  function maybeShowRetentionNotice(){
+    if(!hasExpiredData() || state.retentionNoticeDay === localDate()) return;
+    const next = { ...state, retentionNoticeDay: localDate() };
+    if(save(next)){ state = next; retentionEl.hidden = false; }
+  }
+  function dismissRetentionNotice(){
+    const next = { ...state, retentionNoticeDay: localDate() };
+    if(!save(next)){ showDataMessage('Impossibile aggiornare l’avviso.', true); return false; }
+    state = next;
+    retentionEl.hidden = true;
+    return true;
+  }
+  function deleteExpiredData(){
+    if(!window.confirm('Eliminare definitivamente le registrazioni di più di 30 giorni fa?')) return dismissRetentionNotice();
+    const cutoff = shiftLocalDate(localDate(), -RETENTION_DAYS);
+    const next = { ...state, dailyActivities: state.dailyActivities.filter(record => record.localDate >= cutoff), retentionNoticeDay: localDate() };
+    if(!save(next)){ showDataMessage('Impossibile eliminare i dati meno recenti.', true); return false; }
+    state = next;
+    retentionEl.hidden = true;
+    render();
+    if(!reportViewEl.hidden) renderReport();
+    showDataMessage('Dati meno recenti eliminati.');
+    return true;
+  }
 
   function showReports(){
     homeViewEl.hidden = true;
@@ -892,6 +1031,11 @@
   previousPeriodBtn.addEventListener('click', () => { reportDate = shiftLocalDate(reportDate, reportMode === 'daily' ? -1 : -7); renderReport(); });
   nextPeriodBtn.addEventListener('click', () => { reportDate = shiftLocalDate(reportDate, reportMode === 'daily' ? 1 : 7); renderReport(); });
   exportReportBtn.addEventListener('click', exportReport);
+  exportBackupBtn.addEventListener('click', exportBackup);
+  importBackupBtn.addEventListener('click', () => importBackupInput.click());
+  importBackupInput.addEventListener('change', () => { readBackupFile(importBackupInput.files?.[0]); importBackupInput.value = ''; });
+  dismissRetentionBtn.addEventListener('click', dismissRetentionNotice);
+  deleteOldDataBtn.addEventListener('click', deleteExpiredData);
   closePrepBtn.addEventListener('click', () => { prepEl.hidden = true; });
   closeArchivedBtn.addEventListener('click', () => { archivedEl.hidden = true; });
   confirmPrepBtn.addEventListener('click', () => {
@@ -902,6 +1046,7 @@
   save();
   render();
   maybeOpenPreparation();
+  maybeShowRetentionNotice();
   setInterval(tick, 1000);
   function pauseAndSave(){
     pauseActive();

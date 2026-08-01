@@ -26,12 +26,12 @@ class Element {
   querySelectorAll() { return this.children; }
 }
 
-function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
+function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved, confirm = false } = {}) {
   class FakeDate extends Date {
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
-  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'homeView', 'reportView', 'reportsBtn', 'homeBtn', 'dailyReportBtn', 'weeklyReportBtn', 'previousPeriodBtn', 'nextPeriodBtn', 'reportPeriod', 'reportTotal', 'reportContent', 'exportReportBtn'];
+  const ids = ['list', 'totalTime', 'nameInput', 'addBtn', 'manageBtn', 'archivedBtn', 'prepModal', 'yesterdayList', 'closePrepBtn', 'confirmPrepBtn', 'archivedModal', 'archivedList', 'closeArchivedBtn', 'categoryOptions', 'homeView', 'reportView', 'reportsBtn', 'homeBtn', 'dailyReportBtn', 'weeklyReportBtn', 'previousPeriodBtn', 'nextPeriodBtn', 'reportPeriod', 'reportTotal', 'reportContent', 'exportReportBtn', 'exportBackupBtn', 'importBackupBtn', 'importBackupInput', 'dataMessage', 'retentionModal', 'dismissRetentionBtn', 'deleteOldDataBtn'];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const storage = new Map(saved ? [['timeTracker_activities_v1', JSON.stringify(saved)]] : []);
   const downloads = [];
@@ -45,18 +45,19 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved } = {}) {
     Blob: class { constructor(parts, options) { this.text = parts.join(''); this.options = options; } },
     URL: { createObjectURL: blob => { downloads.push(blob); return `blob:${downloads.length}`; }, revokeObjectURL() {} },
     document: { getElementById: id => elements.get(id), createElement: () => new Element() },
-    window: { addEventListener: (name, listener) => windowEvents.set(name, listener), confirm: () => false },
+    window: { addEventListener: (name, listener) => windowEvents.set(name, listener), confirm: () => confirm },
     setInterval() {}
   };
   const html = fs.readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, reportData, weekDates, mondayFor, shiftLocalDate, renderReport, csvForDates, reportDates, exportReport, setReportPeriod: (mode, date) => { reportMode = mode; reportDate = date; }, getState: () => state };`, context);
+  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, reportData, weekDates, mondayFor, shiftLocalDate, renderReport, csvForDates, reportDates, exportReport, backupSnapshot, exportBackup, validBackup, importBackupText, hasExpiredData, maybeShowRetentionNotice, dismissRetentionNotice, deleteExpiredData, setReportPeriod: (mode, date) => { reportMode = mode; reportDate = date; }, getState: () => state };`, context);
   return {
     ...context.api,
     elements,
     downloads,
     saved: () => JSON.parse(storage.get('timeTracker_activities_v1')),
     advance: ms => { now += ms; },
+    setConfirm: value => { confirm = value; },
     pagehide: () => windowEvents.get('pagehide')()
   };
 }
@@ -309,4 +310,73 @@ assert.deepEqual(JSON.parse(JSON.stringify(csv.reportDates())), ['2025-01-13', '
 assert.equal(csv.csvForDates(csv.reportDates()), 'date,activity,category,duration\r\n2025-01-13,Later,LATER,00:01:00\r\n2025-01-15,Coding,,03:15:00\r\n2025-01-15,"Email, ""Mario""\nFollow-up","COM,MS",01:30:00\r\n');
 assert.equal(JSON.stringify(csv.getState()), csvStateBefore);
 
-console.log('issue #1, #2, #3, #4, #5, #6 and #7 checks passed');
+assert.equal(legacy.saved().schemaVersion, 1);
+
+const backupTimer = openApp();
+backupTimer.addActivity('Running');
+backupTimer.advance(1_500);
+const runningBackup = backupTimer.backupSnapshot();
+assert.deepEqual(JSON.parse(JSON.stringify(runningBackup.dailyActivities)), [{ localDate: '2025-01-15', activityId: backupTimer.getState().activeActivityId, elapsedMs: 1_500 }]);
+assert.equal(backupTimer.getState().activeActivityId, runningBackup.activities[0].id);
+assert.equal(backupTimer.getState().dailyActivities[0].elapsedMs, 0);
+assert.deepEqual(Object.keys(runningBackup).sort(), ['activities', 'dailyActivities', 'exportedAt', 'schemaVersion']);
+
+const validBackup = {
+  schemaVersion: 1,
+  exportedAt: '2025-01-15T09:00:00.000Z',
+  activities: [{ id: 'imported', name: 'Imported', archived: false }],
+  dailyActivities: [{ localDate: '2025-01-14', activityId: 'imported', elapsedMs: 4_000 }]
+};
+const importing = openApp({ confirm: true });
+importing.addActivity('Current');
+importing.advance(1_000);
+assert.equal(importing.importBackupText(JSON.stringify(validBackup)), true);
+assert.deepEqual(JSON.parse(JSON.stringify(importing.getState().activities)), validBackup.activities);
+assert.deepEqual(JSON.parse(JSON.stringify(importing.getState().dailyActivities)), validBackup.dailyActivities);
+assert.equal(importing.getState().activeActivityId, null);
+assert.equal(importing.getState().startedAt, null);
+assert.equal(importing.elements.get('reportView').hidden, false);
+assert.equal(importing.elements.get('reportTotal').textContent, '00:00:04');
+
+const cancelledImport = openApp();
+cancelledImport.addActivity('Current');
+const beforeCancelledImport = JSON.stringify(cancelledImport.getState());
+assert.equal(cancelledImport.importBackupText(JSON.stringify(validBackup)), false);
+assert.equal(JSON.stringify(cancelledImport.getState()), beforeCancelledImport);
+
+const invalidImport = openApp();
+invalidImport.addActivity('Current');
+const beforeInvalidImport = JSON.stringify(invalidImport.getState());
+assert.equal(invalidImport.importBackupText('{bad json'), false);
+assert.equal(JSON.stringify(invalidImport.getState()), beforeInvalidImport);
+assert.equal(invalidImport.importBackupText(JSON.stringify({ ...validBackup, schemaVersion: 2 })), false);
+assert.equal(JSON.stringify(invalidImport.getState()), beforeInvalidImport);
+assert.equal(invalidImport.elements.get('dataMessage').className, 'message error');
+
+const retentionNow = new Date(2025, 0, 31, 9).getTime();
+const retentionData = {
+  schemaVersion: 1,
+  activities: [{ id: 'kept', name: 'Kept', archived: false }],
+  dailyActivities: [
+    { localDate: '2024-12-31', activityId: 'kept', elapsedMs: 1_000 },
+    { localDate: '2025-01-01', activityId: 'kept', elapsedMs: 2_000 },
+    { localDate: '2025-01-31', activityId: 'kept', elapsedMs: 3_000 }
+  ],
+  activeActivityId: null,
+  startedAt: null
+};
+const retention = openApp({ now: retentionNow, saved: retentionData, confirm: true });
+assert.equal(retention.elements.get('retentionModal').hidden, false);
+const seenRetention = openApp({ now: retentionNow, saved: retention.saved() });
+assert.equal(seenRetention.elements.get('retentionModal').hidden, true);
+assert.equal(retention.dismissRetentionNotice(), true);
+const dismissedRetention = retention.saved();
+assert.equal(dismissedRetention.retentionNoticeDay, '2025-01-31');
+const retentionReload = openApp({ now: retentionNow, saved: dismissedRetention });
+assert.equal(retentionReload.elements.get('retentionModal').hidden, true);
+const deleting = openApp({ now: retentionNow, saved: retentionData, confirm: true });
+assert.equal(deleting.deleteExpiredData(), true);
+assert.deepEqual(deleting.getState().dailyActivities.map(record => record.localDate), ['2025-01-01', '2025-01-31']);
+assert.deepEqual(JSON.parse(JSON.stringify(deleting.getState().activities)), retentionData.activities);
+
+console.log('issue #1, #2, #3, #4, #5, #6, #7 and #8 checks passed');
