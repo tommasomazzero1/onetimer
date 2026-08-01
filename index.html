@@ -281,60 +281,93 @@
   const nameInput = document.getElementById('nameInput');
   const addBtn = document.getElementById('addBtn');
 
-  function load(){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return [];
-      return JSON.parse(raw);
-    }catch(e){ return []; }
+  const localDate = (timestamp = Date.now()) => {
+    const date = new Date(timestamp);
+    return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+  };
+
+  function emptyState(){
+    return { activities: [], dailyActivities: [], activeActivityId: null, startedAt: null };
   }
 
+  function load(){
+    try{
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if(!saved) return emptyState();
+
+      // Preserve data from the original single-total version as today's total.
+      if(Array.isArray(saved)){
+        const today = localDate();
+        const active = saved.find(a => a.running && Number.isFinite(a.startedAt));
+        return {
+          activities: saved.map(({ id, name }) => ({ id, name, archived: false })),
+          dailyActivities: saved.map(({ id, elapsed = 0 }) => ({ localDate: today, activityId: id, elapsedMs: elapsed })),
+          activeActivityId: active ? active.id : null,
+          startedAt: active ? active.startedAt : null
+        };
+      }
+
+      if(!Array.isArray(saved.activities) || !Array.isArray(saved.dailyActivities)) return emptyState();
+      return {
+        activities: saved.activities.filter(a => a && a.id && a.name).map(a => ({
+          id: a.id, name: a.name, archived: Boolean(a.archived), ...(a.categoryId ? { categoryId: a.categoryId } : {})
+        })),
+        dailyActivities: saved.dailyActivities.filter(d => d && d.localDate && d.activityId && Number.isFinite(d.elapsedMs)),
+        activeActivityId: saved.activeActivityId || null,
+        startedAt: Number.isFinite(saved.startedAt) ? saved.startedAt : null
+      };
+    }catch(e){ return emptyState(); }
+  }
+
+  let state = load();
+
   function save(){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(activities)); }
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
     catch(e){ console.error('Salvataggio fallito', e); }
   }
 
-  // each activity: { id, name, elapsed (ms accumulated while stopped), running (bool), startedAt (timestamp or null) }
-  let activities = load();
+  function dailyActivity(activityId, date = localDate()){
+    let record = state.dailyActivities.find(d => d.activityId === activityId && d.localDate === date);
+    if(!record){
+      record = { localDate: date, activityId, elapsedMs: 0 };
+      state.dailyActivities.push(record);
+    }
+    return record;
+  }
 
   function fmt(ms){
-    const totalSec = Math.floor(ms/1000);
-    const h = Math.floor(totalSec/3600);
-    const m = Math.floor((totalSec%3600)/60);
-    const s = totalSec%60;
-    return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
   }
 
-  function currentElapsed(a){
-    if(a.running && a.startedAt){
-      return a.elapsed + (Date.now() - a.startedAt);
-    }
-    return a.elapsed;
+  function currentElapsed(activity, now = Date.now()){
+    const total = dailyActivity(activity.id).elapsedMs;
+    return activity.id === state.activeActivityId && state.startedAt !== null ? total + Math.max(0, now - state.startedAt) : total;
   }
 
-  function stopAll(exceptId){
-    activities.forEach(a=>{
-      if(a.running && a.id !== exceptId){
-        a.elapsed += Date.now() - a.startedAt;
-        a.running = false;
-        a.startedAt = null;
-      }
-    });
+  function pauseActive(now = Date.now()){
+    if(!state.activeActivityId) return;
+    const activity = state.activities.find(a => a.id === state.activeActivityId);
+    if(activity && state.startedAt !== null) dailyActivity(activity.id).elapsedMs += Math.max(0, now - state.startedAt);
+    state.activeActivityId = null;
+    state.startedAt = null;
+  }
+
+  function start(id){
+    const now = Date.now();
+    pauseActive(now);
+    dailyActivity(id);
+    state.activeActivityId = id;
+    state.startedAt = now;
   }
 
   function toggle(id){
-    const a = activities.find(x=>x.id===id);
-    if(!a) return;
-    if(a.running){
-      // stop it
-      a.elapsed += Date.now() - a.startedAt;
-      a.running = false;
-      a.startedAt = null;
-    } else {
-      stopAll(null);
-      a.running = true;
-      a.startedAt = Date.now();
-    }
+    if(!state.activities.some(a => a.id === id && !a.archived)) return;
+    if(state.activeActivityId === id) pauseActive();
+    else start(id);
     save();
     render();
   }
@@ -342,50 +375,52 @@
   function addActivity(name){
     name = name.trim();
     if(!name) return;
-    stopAll(null);
-    const a = {
-      id: 'a'+Date.now()+Math.random().toString(36).slice(2,7),
-      name,
-      elapsed: 0,
-      running: true,
-      startedAt: Date.now()
-    };
-    activities.unshift(a);
+    const normalized = name.toLocaleLowerCase();
+    const existing = state.activities.find(a => !a.archived && a.name.trim().toLocaleLowerCase() === normalized);
+    if(existing) start(existing.id);
+    else {
+      const activity = { id: `a${Date.now()}${Math.random().toString(36).slice(2, 7)}`, name, archived: false };
+      state.activities.unshift(activity);
+      start(activity.id);
+    }
     save();
     render();
   }
 
   function removeActivity(id){
-    activities = activities.filter(a=>a.id!==id);
+    if(state.activeActivityId === id) pauseActive();
+    state.activities = state.activities.filter(a => a.id !== id);
+    state.dailyActivities = state.dailyActivities.filter(d => d.activityId !== id);
     save();
     render();
   }
 
   function render(){
     listEl.innerHTML = '';
+    const activities = state.activities.filter(a => !a.archived);
     if(activities.length === 0){
       listEl.innerHTML = '<div class="empty">Nessuna attività ancora. Scrivi un nome sopra e premi "Avvia" per iniziare a tracciare il tempo.</div>';
     } else {
-      activities.forEach(a=>{
+      activities.forEach(activity => {
+        const running = activity.id === state.activeActivityId;
         const row = document.createElement('div');
-        row.className = 'row' + (a.running ? ' active' : '');
+        row.className = 'row' + (running ? ' active' : '');
         row.innerHTML = `
           <div class="switch"></div>
           <div class="row-main">
             <div class="row-name"></div>
-            <div class="row-status">${a.running ? 'In corso' : 'In pausa'}</div>
+            <div class="row-status">${running ? 'In corso' : 'In pausa'}</div>
           </div>
-          <div class="row-time">${fmt(currentElapsed(a))}</div>
+          <div class="row-time">${fmt(currentElapsed(activity))}</div>
           <button class="row-del" title="Elimina attività">✕</button>
         `;
-        row.querySelector('.row-name').textContent = a.name;
-        row.addEventListener('click', (e)=>{
-          if(e.target.closest('.row-del')) return;
-          toggle(a.id);
+        row.querySelector('.row-name').textContent = activity.name;
+        row.addEventListener('click', event => {
+          if(!event.target.closest('.row-del')) toggle(activity.id);
         });
-        row.querySelector('.row-del').addEventListener('click', (e)=>{
-          e.stopPropagation();
-          removeActivity(a.id);
+        row.querySelector('.row-del').addEventListener('click', event => {
+          event.stopPropagation();
+          removeActivity(activity.id);
         });
         listEl.appendChild(row);
       });
@@ -394,30 +429,27 @@
   }
 
   function updateTotal(){
-    const total = activities.reduce((sum,a)=>sum + currentElapsed(a), 0);
+    const total = state.activities.reduce((sum, activity) => sum + currentElapsed(activity), 0);
     totalEl.textContent = fmt(total);
   }
 
   function tick(){
-    // update only time displays without full re-render, for smoothness
     const rows = listEl.querySelectorAll('.row');
-    rows.forEach((row, i)=>{
-      const a = activities[i];
-      if(!a) return;
-      const timeEl = row.querySelector('.row-time');
-      if(timeEl) timeEl.textContent = fmt(currentElapsed(a));
+    state.activities.filter(a => !a.archived).forEach((activity, index) => {
+      const timeEl = rows[index]?.querySelector('.row-time');
+      if(timeEl) timeEl.textContent = fmt(currentElapsed(activity));
     });
     updateTotal();
   }
 
-  addBtn.addEventListener('click', ()=>{
+  addBtn.addEventListener('click', () => {
     addActivity(nameInput.value);
     nameInput.value = '';
     nameInput.focus();
   });
 
-  nameInput.addEventListener('keydown', (e)=>{
-    if(e.key === 'Enter'){
+  nameInput.addEventListener('keydown', event => {
+    if(event.key === 'Enter'){
       addActivity(nameInput.value);
       nameInput.value = '';
     }
@@ -425,8 +457,6 @@
 
   render();
   setInterval(tick, 1000);
-
-  // save periodically in case of unexpected close while running
   window.addEventListener('beforeunload', save);
 </script>
 </body>
