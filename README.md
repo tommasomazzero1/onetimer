@@ -14,9 +14,9 @@ OneTimer è un timer locale per chi passa spesso fra email, riunioni, sviluppo, 
 
 ## Usa l'app
 
-Apri [OneTimer su GitHub Pages](https://tommasomazzero1.github.io/onetimer/) oppure apri [`index.html`](./index.html) in un browser moderno. Non servono installazione, build, server o dipendenze esterne.
+Apri [OneTimer su Cloudflare Pages](https://onetimer.pages.dev/) oppure apri [`index.html`](./index.html) in un browser moderno. Non servono installazione, build, server o dipendenze esterne.
 
-Ogni push su `master` pubblica il contenuto corrente del repository su GitHub Pages.
+Il progetto Cloudflare Pages è collegato al repository: ogni push su `master` pubblica automaticamente la versione corrente.
 
 ## Privacy e dati
 
