@@ -365,7 +365,7 @@
   <div class="prep" id="archivedModal" hidden>
     <div class="prep-card" role="dialog" aria-modal="true" aria-labelledby="archivedTitle">
       <h2 id="archivedTitle">Attività archiviate</h2>
-      <p>Ripristina un'attività quando vuoi renderla di nuovo disponibile.</p>
+      <p>Ripristina un'attività o eliminala definitivamente insieme alla sua cronologia.</p>
       <div class="archive-list" id="archivedList"></div>
       <div class="prep-actions"><button id="closeArchivedBtn">Chiudi</button></div>
     </div>
@@ -869,6 +869,15 @@
     save();
     render();
   }
+  function deleteArchivedActivity(id){
+    const activity = state.activities.find(a => a.id === id && a.archived);
+    if(!activity || !window.confirm(`Eliminare definitivamente "${activity.name}" e tutta la sua cronologia?`)) return false;
+    const next = { ...state, activities: state.activities.filter(a => a.id !== id), dailyActivities: state.dailyActivities.filter(record => record.activityId !== id) };
+    if(!save(next)){ showDataMessage('Impossibile eliminare l’attività.', true); return false; }
+    state = next;
+    render();
+    return true;
+  }
 
   function render(){
     listEl.innerHTML = '';
@@ -997,9 +1006,15 @@
         restoreActivity(activity.id);
         openArchivedActivities();
       });
+      const remove = document.createElement('button');
+      remove.textContent = 'Elimina';
+      remove.addEventListener('click', () => {
+        if(deleteArchivedActivity(activity.id)) openArchivedActivities();
+      });
       row.appendChild(name);
       row.appendChild(date);
       row.appendChild(restore);
+      row.appendChild(remove);
       archivedListEl.appendChild(row);
     });
     archivedEl.hidden = false;

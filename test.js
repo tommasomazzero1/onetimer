@@ -51,7 +51,7 @@ function openApp({ now = new Date(2025, 0, 15, 9).getTime(), saved, confirm = fa
   };
   const html = fs.readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, setActivityCategory, categoryTotals, reportData, weekDates, mondayFor, shiftLocalDate, renderReport, csvForDates, reportDates, exportReport, backupSnapshot, exportBackup, validBackup, importBackupText, hasExpiredData, maybeShowRetentionNotice, dismissRetentionNotice, deleteExpiredData, setReportPeriod: (mode, date) => { reportMode = mode; reportDate = date; }, getState: () => state };`, context);
+  vm.runInNewContext(`${script}\nglobalThis.api = { addActivity, toggle, tick, load, prepareToday, yesterdayActivities, todayActivities, openPreparation, openArchivedActivities, archiveActivity, restoreActivity, deleteArchivedActivity, setActivityCategory, categoryTotals, reportData, weekDates, mondayFor, shiftLocalDate, renderReport, csvForDates, reportDates, exportReport, backupSnapshot, exportBackup, validBackup, importBackupText, hasExpiredData, maybeShowRetentionNotice, dismissRetentionNotice, deleteExpiredData, setReportPeriod: (mode, date) => { reportMode = mode; reportDate = date; }, getState: () => state };`, context);
   return {
     ...context.api,
     elements,
@@ -202,6 +202,13 @@ assert.equal(restoredToday.elapsedMs, 0);
 lifecycle.restoreActivity('older-archived');
 assert.equal(lifecycle.getState().dailyActivities.find(record => record.localDate === '2025-01-10' && record.activityId === 'older-archived').elapsedMs, 7_000);
 assert.equal(JSON.stringify(lifecycle.getState().dailyActivities.filter(record => record.localDate === '2025-01-10')), oldHistory);
+lifecycle.archiveActivity('older-archived');
+assert.equal(lifecycle.deleteArchivedActivity('older-archived'), false);
+assert.ok(lifecycle.getState().activities.some(activity => activity.id === 'older-archived'));
+lifecycle.setConfirm(true);
+assert.equal(lifecycle.deleteArchivedActivity('older-archived'), true);
+assert.ok(!lifecycle.getState().activities.some(activity => activity.id === 'older-archived'));
+assert.ok(!lifecycle.getState().dailyActivities.some(record => record.activityId === 'older-archived'));
 
 const legacy = openApp({ saved: [{ id: 'legacy', name: 'Legacy', elapsed: 3_000, running: true, startedAt: new Date(2025, 0, 15, 8).getTime() }] });
 assert.equal(legacy.load().activeActivityId, 'legacy');
